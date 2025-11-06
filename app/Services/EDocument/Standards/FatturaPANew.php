@@ -248,7 +248,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
 
     private function setDettaglioPagamento(): self
     {
-        $total = $this->invoice->balance + ($this->clientNeedsInvCont() ? self::IMPORTO_BOLLO : 0);
+        $total = $this->invoice->calc()->getTotal() + ($this->clientNeedsInvCont() ? self::IMPORTO_BOLLO : 0);
         $paymentTypeId = (int)$this->invoice->company->settings->payment_type_id;
         $modalitaPagamento = ModalitaPagamento::getByPaymentType($paymentTypeId) ?? ModalitaPagamento::MP01_CASH;
 
