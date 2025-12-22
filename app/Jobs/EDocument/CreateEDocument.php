@@ -139,6 +139,8 @@ class CreateEDocument implements ShouldQueue
                 case "XInvoice-Basic":
                     $zugferd = (new ZugferdEDokument($this->document))->run();
                     return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
+                case "FatturaPA":
+                    return (new FatturaPANew($this->document))->run()->toXml();
                 default:
                     $zugferd = (new ZugferdEDokument($this->document))->run();
                     return $this->returnObject ? $zugferd : $zugferd->getXml();

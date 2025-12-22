@@ -12,6 +12,7 @@
 
 namespace App\Services\EDocument\Standards;
 
+use App\Models\Credit;
 use App\Models\Invoice;
 use App\Services\AbstractService;
 use App\Services\EDocument\Standards\FatturaPA\Enums\ModalitaPagamento;
@@ -57,7 +58,7 @@ class FatturaPANew extends AbstractService
     /**
      * @param Invoice $invoice
      */
-    public function __construct(public Invoice $invoice)
+    public function __construct(public Invoice | \App\Models\Credit $invoice)
     {
     }
 
@@ -227,7 +228,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
             $this->DatiGeneraliDocumento->DatiBollo = $datiBollo;
         }
 
-        $this->DatiGeneraliDocumento->TipoDocumento = "TD01";
+        $this->DatiGeneraliDocumento->TipoDocumento = $this->invoice instanceof Credit ? "TD04" : "TD01";
         $this->DatiGeneraliDocumento->Divisa = $this->invoice->client->currency()->code;
         $this->DatiGeneraliDocumento->Data = new \DateTime($this->invoice->date);
         $this->DatiGeneraliDocumento->Numero = $this->invoice->number;
