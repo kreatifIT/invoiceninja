@@ -172,11 +172,15 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
         $anagrafica->Denominazione =  $this->invoice->client->present()->name();
         $datiAnagrafici->Anagrafica = $anagrafica;
 
-        $idFiscale = new IdFiscaleIVA();
-        $idFiscale->IdCodice = ltrim($this->invoice->client->vat_number, 'IT');
-        $idFiscale->IdPaese = $this->invoice->client->country->iso_3166_2;
+        if ($this->invoice->client->country->iso_3166_2 == 'IT' && (str_starts_with($this->invoice->client->vat_number, '800') || str_starts_with($this->invoice->client->vat_number, '900'))) {
+            $datiAnagrafici->CodiceFiscale = $this->invoice->client->vat_number;
+        } else {
+            $idFiscale = new IdFiscaleIVA();
+            $idFiscale->IdCodice = ltrim($this->invoice->client->vat_number, 'IT');
+            $idFiscale->IdPaese = $this->invoice->client->country->iso_3166_2;
 
-        $datiAnagrafici->IdFiscaleIVA = $idFiscale;
+            $datiAnagrafici->IdFiscaleIVA = $idFiscale;
+        }
 
         $sede = new Sede();
         $sede->Indirizzo =  $this->invoice->client->address1;
