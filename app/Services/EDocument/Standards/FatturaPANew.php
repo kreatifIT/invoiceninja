@@ -335,7 +335,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
 
             $dettaglioLinee = new DettaglioLinee();
             $dettaglioLinee->NumeroLinea =  "{$numero}";
-            $dettaglioLinee->Descrizione =  trim($item->product_key .' '. $item->notes) ?? 'Descrizione';
+            $dettaglioLinee->Descrizione =  trim(($item?->product_key ?? '') . ' '. ($item?->notes ?? '')) ?? 'Descrizione';
             $dettaglioLinee->Quantita =  sprintf('%0.2f', $item->quantity);
             $dettaglioLinee->PrezzoUnitario =  sprintf('%0.2f', $item->cost);
             $dettaglioLinee->PrezzoTotale =  sprintf('%0.2f', $item->line_total);
