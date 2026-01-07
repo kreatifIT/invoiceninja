@@ -172,26 +172,32 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
         $anagrafica->Denominazione =  $this->invoice->client->present()->name();
         $datiAnagrafici->Anagrafica = $anagrafica;
 
-        $isCompany = true;
-        if ($this->invoice->client->country->iso_3166_2 == 'IT') {
-            $prefixCode = substr(ltrim($this->invoice->client->vat_number, 'IT'), 0, 3);
-            $prefixInt = (int)$prefixCode;
+        if ($this->invoice->client->vat_number) {
+            // client has a vat number therefore is a company or a non profit with a vat number
+            $isCompany = true;
 
-            $isPureCfAssociation = ($prefixInt >= 800 && $prefixInt <= 899);
-            $isOtherNonProfit = ($prefixInt >= 900 && $prefixInt <= 999);
+            if ($this->invoice->client->country->iso_3166_2 == 'IT' && $this->invoice->client->vat_number) {
+                $prefixCode = substr(ltrim($this->invoice->client->vat_number, 'IT'), 0, 3);
+                $prefixInt = (int)$prefixCode;
 
-            $isCompany = !($isPureCfAssociation || $isOtherNonProfit);
-        }
+                $isPureCfAssociation = ($prefixInt >= 800 && $prefixInt <= 899);
+                $isOtherNonProfit = ($prefixInt >= 900 && $prefixInt <= 999);
 
-        if ($isCompany) {
-            $idFiscale = new IdFiscaleIVA();
-            $idFiscale->IdCodice = ltrim($this->invoice->client->vat_number, 'IT');
-            $idFiscale->IdPaese = $this->invoice->client->country->iso_3166_2;
+                $isCompany = !($isPureCfAssociation || $isOtherNonProfit);
+            }
 
-            $datiAnagrafici->IdFiscaleIVA = $idFiscale;
-        }
-        else {
-            $datiAnagrafici->CodiceFiscale = $this->invoice->client->vat_number;
+            if ($isCompany) {
+                $idFiscale = new IdFiscaleIVA();
+                $idFiscale->IdCodice = ltrim($this->invoice->client->vat_number, 'IT');
+                $idFiscale->IdPaese = $this->invoice->client->country->iso_3166_2;
+
+                $datiAnagrafici->IdFiscaleIVA = $idFiscale;
+            }
+            else {
+                $datiAnagrafici->CodiceFiscale = $this->invoice->client->vat_number;
+            }
+        } else {
+            $datiAnagrafici->CodiceFiscale = $this->invoice->client->id_number;
         }
 
         $sede = new Sede();
