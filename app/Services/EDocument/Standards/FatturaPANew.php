@@ -110,7 +110,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
     {
 
         $this->DatiTrasmissione->FormatoTrasmissione = "FPR12";
-        $this->DatiTrasmissione->CodiceDestinatario = $this->invoice->client->routing_id;
+        $this->DatiTrasmissione->CodiceDestinatario = $this->invoice->client->routing_id ?? '0000000';
         $this->DatiTrasmissione->ProgressivoInvio = $this->invoice->number;
 
         $this->DatiTrasmissione->IdTrasmittente = $this->IdTrasmittente;
@@ -204,7 +204,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
         $sede->Indirizzo =  $this->invoice->client->address1;
         $sede->CAP =  str_pad((int)$this->invoice->client->postal_code, 5, '0', STR_PAD_LEFT);
         $sede->Comune =  $this->invoice->client->city;
-        $sede->Provincia =  $this->invoice->client->state;
+        $sede->Provincia =  $this->invoice->client->state ?? '';
         $sede->Nazione = $this->invoice->client->country->iso_3166_2;
 
         $cessionarioCommittente = new CessionarioCommittente();
