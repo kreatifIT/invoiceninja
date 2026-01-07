@@ -174,7 +174,7 @@ http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_fi
 
         $isCompany = true;
         if ($this->invoice->client->country->iso_3166_2 == 'IT') {
-            $prefixCode = substr($this->invoice->client->vat_number, 7, 3);
+            $prefixCode = substr(ltrim($this->invoice->client->vat_number, 'IT'), 0, 3);
             $prefixInt = (int)$prefixCode;
 
             $isPureCfAssociation = ($prefixInt >= 800 && $prefixInt <= 899);
