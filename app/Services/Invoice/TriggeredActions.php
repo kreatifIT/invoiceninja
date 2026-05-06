@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -27,12 +27,15 @@ class TriggeredActions extends AbstractService
 
     private bool $updated = false;
 
-    public function __construct(private Invoice $invoice, private Request $request)
-    {
-    }
+    public function __construct(private Invoice $invoice, private Request $request) {}
 
     public function run()
     {
+        if ($this->request->has('mark_sent') && $this->request->input('mark_sent') == 'true' && $this->invoice->status_id == Invoice::STATUS_DRAFT) {
+            $this->invoice = $this->invoice->service()->markSent()->save(); //update notification NOT sent
+            $this->updated = true;
+        }
+
         if ($this->request->has('auto_bill') && $this->request->input('auto_bill') == 'true') {
             try {
                 $this->invoice->service()->autoBill();
@@ -45,11 +48,6 @@ class TriggeredActions extends AbstractService
             $this->invoice = $this->invoice->service()->markPaid($this->request->input('reference'))->save(); //update notification sends automatically for this.
         }
 
-        if ($this->request->has('mark_sent') && $this->request->input('mark_sent') == 'true' && $this->invoice->status_id == Invoice::STATUS_DRAFT) {
-            $this->invoice = $this->invoice->service()->markSent()->save(); //update notification NOT sent
-            $this->updated = true;
-        }
-
         if ($this->request->has('amount_paid') && is_numeric($this->request->input('amount_paid'))) {
             $this->invoice = $this->invoice->service()->applyPaymentAmount($this->request->input('amount_paid'), $this->request->input('reference'))->save();
             // $this->updated = false;
@@ -57,7 +55,15 @@ class TriggeredActions extends AbstractService
 
         if ($this->request->has('send_email') && $this->request->input('send_email') == 'true') {
             $this->invoice->service()->markSent()->save();
-            $this->sendEmail();
+
+            /** Check for VERIFACTU Sent Status */
+            if ($this->invoice->company->verifactuEnabled() && !$this->invoice->hasSentAeat()) {
+                $this->invoice->invitations()->update(['email_error' => 'primed']); // Flag the invitations as primed for AEAT submission
+                $this->invoice->service()->sendVerifactu();
+            } else {
+                $this->sendEmail();
+            }
+
             $this->updated = false;
         }
 
@@ -82,8 +88,12 @@ class TriggeredActions extends AbstractService
             $company->save();
         }
 
-        if ($this->request->has('retry_e_send') && $this->request->input('retry_e_send') == 'true' && !isset($this->invoice->backup->guid) && $this->invoice->client->peppolSendingEnabled()) {
-            \App\Services\EDocument\Jobs\SendEDocument::dispatch(get_class($this->invoice), $this->invoice->id, $this->invoice->company->db);
+        if ($this->request->has('retry_e_send') && $this->request->input('retry_e_send') == 'true' && strlen($this->invoice->backup->guid ?? '') == 0) {
+            if ($this->invoice->client->peppolSendingEnabled()) {
+                \App\Services\EDocument\Jobs\SendEDocument::dispatch(get_class($this->invoice), $this->invoice->id, $this->invoice->company->db);
+            } elseif ($this->invoice->company->verifactuEnabled()) {
+                $this->invoice->service()->sendVerifactu();
+            }
         }
 
         if ($this->request->has('redirect')) {
@@ -91,9 +101,9 @@ class TriggeredActions extends AbstractService
             $redirectUrl = urldecode($this->request->input('redirect'));
 
             if (filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
-                $backup = ($this->invoice->backup && is_object($this->invoice->backup)) ? $this->invoice->backup : new \stdClass();
-                $backup->redirect = $redirectUrl;
-                $this->invoice->backup = $backup;
+                // $backup = ($this->invoice->backup && is_object($this->invoice->backup)) ? $this->invoice->backup : new \stdClass();
+                // $backup->redirect = $redirectUrl;
+                $this->invoice->backup->redirect = $redirectUrl;
                 $this->invoice->saveQuietly();
             }
 

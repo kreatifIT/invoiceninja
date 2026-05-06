@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,10 +16,12 @@ use App\DataMapper\CompanySettings;
 use Tests\TestCase;
 
 /**
- * 
+ *
  */
 class PdfVariablesTest extends TestCase
 {
+    public $settings;
+    
     protected function setUp(): void
     {
         parent::setUp();

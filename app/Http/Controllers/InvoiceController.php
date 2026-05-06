@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -18,6 +18,7 @@ use App\Models\Account;
 use App\Models\Invoice;
 use App\Models\Scheduler;
 use App\Jobs\Cron\AutoBill;
+use App\Helpers\Cache\Atomic;
 use Illuminate\Http\Response;
 use App\Factory\InvoiceFactory;
 use App\Filters\InvoiceFilters;
@@ -241,6 +242,8 @@ class InvoiceController extends BaseController
 
         event(new InvoiceWasCreated($invoice, $invoice->company, Ninja::eventVars($user ? $user->id : null)));
 
+        Atomic::del($request->lock_key);
+
         return $this->itemResponse($invoice);
     }
 
@@ -409,7 +412,13 @@ class InvoiceController extends BaseController
             return $request->disallowUpdate();
         }
 
-        if ($invoice->isLocked()) {
+        if (($invoice->isLocked() || $invoice->company->verifactuEnabled()) && $request->input('paid') == 'true') {
+
+            $invoice->service()
+                    ->triggeredActions($request);
+
+            return $this->itemResponse($invoice->fresh());
+        } elseif ($invoice->isLocked()) {
             return response()->json(['message' => '', 'errors' => ['number' => ctrans('texts.locked_invoice')]], 422);
         }
 
@@ -421,7 +430,11 @@ class InvoiceController extends BaseController
                 ->triggeredActions($request)
                 ->adjustInventory($old_invoice);
 
-        event(new InvoiceWasUpdated($invoice, $invoice->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
+        $skip_event = $request->has('mark_sent') || $request->has('send_email') || ($request->input('paid') == 'true');
+
+        if (!$skip_event) {
+            event(new InvoiceWasUpdated($invoice, $invoice->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
+        }
 
         return $this->itemResponse($invoice->fresh());
     }
@@ -495,24 +508,29 @@ class InvoiceController extends BaseController
         $ids = $request->input('ids');
 
         if (Ninja::isHosted() && (stripos($action, 'email') !== false) && !$user->company()->account->account_sms_verified) {
+            Atomic::del($request->lock_key);
             return response(['message' => 'Please verify your account to send emails.'], 400);
         }
 
         if (Ninja::isHosted() && $user->account->emailQuotaExceeded()) {
+            Atomic::del($request->lock_key);
             return response(['message' => ctrans('texts.email_quota_exceeded_subject')], 400);
         }
 
         if ($user->hasExactPermission('disable_emails') && (stripos($action, 'email') !== false)) {
+            Atomic::del($request->lock_key);
             return response(['message' => ctrans('texts.disable_emails_error')], 400);
         }
 
         if (in_array($request->action, ['auto_bill', 'mark_paid']) && $user->cannot('create', \App\Models\Payment::class)) {
+            Atomic::del($request->lock_key);
             return response(['message' => ctrans('texts.not_authorized'), 'errors' => ['ids' => [ctrans('texts.not_authorized')]]], 422);
         }
 
         $invoices = Invoice::withTrashed()->whereIn('id', $this->transformKeys($ids))->company()->get();
 
         if ($invoices->count() == 0) {
+            Atomic::del($request->lock_key);
             return response()->json(['message' => 'No Invoices Found']);
         }
 
@@ -521,13 +539,17 @@ class InvoiceController extends BaseController
          */
 
         if ($action == 'bulk_download' && $invoices->count() > 1) {
-            $invoices->each(function ($invoice) use ($user) {
-                if ($user->cannot('view', $invoice)) {
-                    return response()->json(['message' => ctrans('text.access_denied')]);
-                }
+            $authorized = $invoices->filter(function ($invoice) use ($user) {
+                return $user->can('view', $invoice);
             });
 
-            ZipInvoices::dispatch($invoices->pluck('id'), $invoices->first()->company, auth()->user());
+            if ($authorized->isEmpty()) {
+                Atomic::del($request->lock_key);
+                return response()->json(['message' => ctrans('texts.access_denied')], 403);
+            }
+
+            ZipInvoices::dispatch($authorized->pluck('id'), $authorized->first()->company, auth()->user());
+            Atomic::del($request->lock_key);
 
             return response()->json(['message' => ctrans('texts.sent_message')], 200);
         }
@@ -536,12 +558,23 @@ class InvoiceController extends BaseController
 
             $filename = $invoices->first()->getFileName();
 
+            Atomic::del($request->lock_key);
+
             return response()->streamDownload(function () use ($invoices) {
                 echo $invoices->first()->service()->getInvoicePdf();
             }, $filename, ['Content-Type' => 'application/pdf']);
         }
 
-        if ($action == 'bulk_print' && $user->can('view', $invoices->first())) {
+        if ($action == 'bulk_print') {
+            $invoices = $invoices->filter(function ($invoice) use ($user) {
+                return $user->can('view', $invoice);
+            });
+
+            if ($invoices->isEmpty()) {
+                Atomic::del($request->lock_key);
+                return response()->json(['message' => ctrans('texts.access_denied')], 403);
+            }
+
             $start = microtime(true);
 
             $batch_id = (new \App\Jobs\Invoice\PrintEntityBatch(Invoice::class, $invoices->pluck('id')->toArray(), $user->company()->db))->handle();
@@ -563,18 +596,28 @@ class InvoiceController extends BaseController
             })->toArray();
 
             $mergedPdf = (new PdfMerge($paths))->run();
+            Atomic::del($request->lock_key);
 
             return response()->streamDownload(function () use ($mergedPdf) {
                 echo $mergedPdf;
             }, 'print.pdf', [
                 'Content-Type' => 'application/pdf',
                 'Cache-Control:' => 'no-cache',
-                'Server-Timing' => (string)(microtime(true) - $start)
+                'Server-Timing' => (string) (microtime(true) - $start),
             ]);
         }
 
-        if ($action == 'template' && $user->can('view', $invoices->first())) {
+        if ($action == 'template') {
+            $invoices = $invoices->filter(function ($invoice) use ($user) {
+                return $user->can('view', $invoice);
+            });
 
+            if ($invoices->isEmpty()) {
+                Atomic::del($request->lock_key);
+                return response()->json(['message' => ctrans('texts.access_denied')], 403);
+            }
+
+            $ids = $invoices->pluck('hashed_id')->toArray();
             $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
 
             TemplateAction::dispatch(
@@ -588,6 +631,8 @@ class InvoiceController extends BaseController
                 $request->boolean('send_email')
             );
 
+            Atomic::del($request->lock_key);
+
             return response()->json(['message' => $hash_or_response], 200);
         }
 
@@ -599,18 +644,20 @@ class InvoiceController extends BaseController
                 }
             });
 
+            Atomic::del($request->lock_key);
+
             return $this->listResponse(Invoice::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
         }
 
         if (in_array($action, ['email','send_email'])) {
 
-            $invoice = $invoices->first();
-
             $invoices->filter(function ($invoice) use ($user) {
                 return $user->can('edit', $invoice);
             })->each(function ($invoice) use ($user, $request) {
-                $invoice->service()->sendEmail(email_type: $request->input('email_type', $invoice->calculateTemplate('invoice')));
+                $invoice->service()->markSent()->sendEmail(email_type: $request->input('email_type', $invoice->calculateTemplate('invoice')));
             });
+
+            Atomic::del($request->lock_key);
 
             return $this->listResponse(Invoice::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
 
@@ -625,6 +672,7 @@ class InvoiceController extends BaseController
         });
 
         /* Need to understand which permission are required for the given bulk action ie. view / edit */
+        Atomic::del($request->lock_key);
 
         return $this->listResponse(Invoice::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
     }
@@ -779,7 +827,7 @@ class InvoiceController extends BaseController
                 }
                 break;
             case 'cancel':
-                $invoice = $invoice->service()->handleCancellation()->save();
+                $invoice = $invoice->service()->handleCancellation(request()->input('reason'))->save();
                 if (! $bulk) {
                     $this->itemResponse($invoice);
                 }
@@ -846,7 +894,7 @@ class InvoiceController extends BaseController
 
         App::setLocale($invitation->contact->preferredLocale());
 
-        $file_name = $invoice->numberFormatter().'.pdf';
+        $file_name = $invoice->numberFormatter() . '.pdf';
 
         $file = (new \App\Jobs\Entity\CreateRawPdf($invitation))->handle();
 
@@ -1063,7 +1111,7 @@ class InvoiceController extends BaseController
     public function paymentSchedule(PaymentScheduleRequest $request, Invoice $invoice)
     {
         $repo = new SchedulerRepository();
-        
+
         $repo->save($request->all(), SchedulerFactory::create($invoice->company_id, auth()->user()->id));
 
         return $this->itemResponse($invoice->fresh());
@@ -1079,7 +1127,7 @@ class InvoiceController extends BaseController
                                 ->where('parameters->invoice_id', $invoice->hashed_id)
                                 ->first();
 
-        if($scheduler) {
+        if ($scheduler) {
             $scheduler->forceDelete();
         }
 

@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreatePurchaseOrdersIndex implements MigrationInterface
 {
@@ -13,6 +14,14 @@ final class CreatePurchaseOrdersIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+        
+        $indexExistsResponse = $client->indices()->exists(['index' => 'purchase_orders']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
         $mapping = [
             'properties' => [
                 // Core purchase order fields
@@ -76,7 +85,7 @@ final class CreatePurchaseOrdersIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('purchase_orders_v2', $mapping);
+        Index::createRaw('purchase_orders', $mapping);
     }
 
     /**
@@ -84,6 +93,6 @@ final class CreatePurchaseOrdersIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('purchase_orders_v2');
+        Index::dropIfExists('purchase_orders');
     }
 }

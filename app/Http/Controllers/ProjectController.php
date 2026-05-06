@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -538,7 +538,7 @@ class ProjectController extends BaseController
             }
         });
 
-        return $this->listResponse(Project::withTrashed()->whereIn('id', $this->transformKeys($ids)));
+        return $this->listResponse(Project::withTrashed()->company()->whereIn('id', $this->transformKeys($ids)));
     }
 
     /**
@@ -607,7 +607,7 @@ class ProjectController extends BaseController
         $this->entity_transformer = InvoiceTransformer::class;
         $this->entity_type = Invoice::class;
 
-        $invoice = $this->project_repo->invoice($project);
+        $invoice = $this->project_repo->invoice(collect([$project]));
 
         return $this->itemResponse($invoice);
     }

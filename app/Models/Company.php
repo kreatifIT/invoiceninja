@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -26,7 +26,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\Cache;
 use Laracasts\Presenter\PresentableTrait;
 
 /**
@@ -59,7 +58,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $first_month_of_year
  * @property string $portal_mode
  * @property string|null $portal_domain
- * @property int $enable_modules
+ * @property bool $enable_modules //alias for DocuNinja is active / available
  * @property object $custom_fields
  * @property \App\DataMapper\CompanySettings|\stdClass $settings
  * @property string $slack_webhook_url
@@ -94,6 +93,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property bool $markdown_enabled
  * @property bool $use_comma_as_decimal_place
  * @property bool $report_include_drafts
+ * @property bool $invoice_task_project_header
  * @property array|null $client_registration_fields
  * @property bool $convert_rate_to_client
  * @property bool $markdown_email_enabled
@@ -131,14 +131,18 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int|null $smtp_port
  * @property string|null $smtp_encryption
  * @property string|null $smtp_local_domain
+ * @property boolean $invoice_task_item_description
  * @property \App\DataMapper\QuickbooksSettings|null $quickbooks
  * @property boolean $smtp_verify_peer
+ * @property object|null $origin_tax_data
  * @property int|null $legal_entity_id
  * @property bool $invoice_task_item_description
  * @property bool $show_task_item_description
  * @property bool $invoice_task_project_header
  * @property-read \App\Models\Account $account
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Location> $locations
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VerifactuLog> $verifactu_logs
  * @property-read int|null $activities_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $all_activities
  * @property-read int|null $all_activities_count
@@ -389,7 +393,7 @@ class Company extends BaseModel
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'client_registration_fields' => 'array',
-        'tax_data' => 'object',
+        'tax_data' => \App\Casts\TaxModelCast::class,
         'origin_tax_data' => 'object',
         'e_invoice_certificate_passphrase' => EncryptedCast::class,
         'smtp_username' => 'encrypted',
@@ -432,6 +436,11 @@ class Company extends BaseModel
     public function schedulers(): HasMany
     {
         return $this->hasMany(Scheduler::class);
+    }
+
+    public function verifactu_logs(): HasMany
+    {
+        return $this->hasMany(VerifactuLog::class)->orderBy('id', 'DESC');
     }
 
     public function task_schedulers(): HasMany
@@ -660,15 +669,16 @@ class Company extends BaseModel
 
     public function country()
     {
-        return once(function () {   
+        return once(function () {
 
             /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+
             $countries = app('countries');
             $country_id = $this->getSetting('country_id');
 
             return $countries->first(function ($item) use ($country_id) {
-                    return $item->id == $country_id;
-                });
+                return $item->id == $country_id;
+            });
 
         });
     }
@@ -957,7 +967,7 @@ class Company extends BaseModel
         $timezone = $this->timezone();
 
         date_default_timezone_set('GMT');
-        $date = new \DateTime("now", new \DateTimeZone($timezone->name));
+        $date = new \DateTime("now", new \DateTimeZone($timezone->name ?? 'UTC'));
         $offset = $date->getOffset();
 
         return $offset;
@@ -976,7 +986,7 @@ class Company extends BaseModel
         $timezone = $this->timezone();
 
         date_default_timezone_set('GMT');
-        $date = new \DateTime("now", new \DateTimeZone($timezone->name));
+        $date = new \DateTime("now", new \DateTimeZone($timezone->name ?? 'UTC'));
         $offset -= $date->getOffset();
 
         $offset += ($entity_send_time * 3600);
@@ -994,11 +1004,11 @@ class Company extends BaseModel
         return once(function () {
             /** @var \Illuminate\Support\Collection<\App\Models\DateFormat> */
             $date_formats = app('date_formats');
-                $date_format = $this->getSetting('date_format_id');
+            $date_format = $this->getSetting('date_format_id');
 
-                return $date_formats->first(function ($item) use ($date_format) {
-                    return $item->id == $date_format;
-                })->format;
+            return $date_formats->first(function ($item) use ($date_format) {
+                return $item->id == $date_format;
+            })->format;
         });
     }
 
@@ -1037,5 +1047,68 @@ class Company extends BaseModel
     public function peppolSendingEnabled(): bool
     {
         return !$this->account->is_flagged && $this->account->e_invoice_quota > 0 && isset($this->legal_entity_id) && isset($this->tax_data->acts_as_sender) && $this->tax_data->acts_as_sender;
+    }
+
+    /**
+     * verifactuEnabled
+     *
+     * Returns a flag if the current company is using verifactu as the e-invoice provider
+     *
+     * @return bool
+     */
+    public function verifactuEnabled(): bool
+    {
+        return once(function () {
+            return $this->getSetting('e_invoice_type') == 'VERIFACTU';
+        });
+    }
+
+    /**
+     * Check if QuickBooks push should be triggered for an entity/action.
+     *
+     * Uses efficient checks to avoid overhead for companies not using QuickBooks.
+     * Uses once() to cache the result for the request lifecycle.
+     *
+     * This method is designed to be called from model observers to efficiently
+     * determine if a push job should be dispatched, with zero overhead for
+     * companies that don't use QuickBooks.
+     *
+     * @param string $entity Entity type: 'client', 'invoice', etc.
+     * @return bool
+     */
+    public function shouldPushToQuickbooks(string $entity): bool
+    {
+        // FASTEST CHECK: Raw database column (no object instantiation, no JSON decode)
+        // This is the cheapest possible check - just a null comparison
+        // For companies without QuickBooks, this returns immediately with ~0.001ms overhead
+        if (is_null($this->getRawOriginal('quickbooks')) || !$this->account->isPaid()) {
+            return false;
+        }
+
+        // Cache the detailed check for this request lifecycle
+        // This prevents re-checking if called multiple times in the same request
+        return once(function () use ($entity) {
+            // Check if QuickBooks is actually configured (has token)
+            if (!$this->quickbooks->isConfigured()) {
+                return false;
+            }
+
+            // Verify entity exists in settings
+            if (!isset($this->quickbooks->settings->{$entity})) {
+                return false;
+            }
+
+            $entitySettings = $this->quickbooks->settings->{$entity};
+            $direction = $entitySettings->direction->value;
+
+            // Check if sync direction allows push
+            return $direction === 'push' || $direction === 'bidirectional';
+        });
+    }
+
+    public function docuninjaActive(): bool
+    {
+        return (app()->environment('local') || Ninja::isHosted()) && $this->enable_modules && $this->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS);
+        // return $this->enable_modules && Ninja::isHosted();
     }
 }

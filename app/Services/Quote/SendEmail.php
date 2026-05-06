@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,9 +23,7 @@ use App\Events\General\EntityWasEmailed;
 
 class SendEmail
 {
-    public function __construct(public Quote $quote, public ?string $reminder_template = null, protected ?ClientContact $contact = null)
-    {
-    }
+    public function __construct(public Quote $quote, public ?string $reminder_template = null, protected ?ClientContact $contact = null) {}
 
     /**
      * Builds the correct template to send.
@@ -34,13 +32,7 @@ class SendEmail
     public function run()
     {
 
-        if (in_array($this->reminder_template, ["email_quote_template_reminder1","reminder1"])) {
-            $this->reminder_template = "email_quote_template_reminder1";
-        } elseif (in_array($this->reminder_template, ['custom1','custom2','custom3'])) {
-            $this->reminder_template = "email_template_".$this->reminder_template;
-        } else {
-            $this->reminder_template = "email_template_".$this->quote->calculateTemplate('quote');
-        }
+        $this->reminder_template = $this->resolveTemplateString($this->reminder_template);
 
         $this->quote->service()->markSent()->save();
 
@@ -70,5 +62,17 @@ class SendEmail
 
         $this->quote->sendEvent(Webhook::EVENT_SENT_QUOTE, "client");
 
+    }
+
+    private function resolveTemplateString(string $template): string
+    {
+        return match ($template) {
+            'quote' => 'email_template_quote',
+            'reminder1' => 'email_quote_template_reminder1',
+            'custom1' => 'email_template_custom1',
+            'custom2' => 'email_template_custom2',
+            'custom3' => 'email_template_custom3',
+            default => "email_template_quote",
+        };
     }
 }

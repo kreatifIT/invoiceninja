@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -40,7 +41,7 @@ class ClientApiTest extends TestCase
     use MockAccountData;
     use ClientGroupSettingsSaver;
 
-    public $faker;
+    public $settings;
 
     protected function setUp(): void
     {
@@ -48,11 +49,105 @@ class ClientApiTest extends TestCase
 
         $this->makeTestData();
 
-        Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
+    }
+
+    public function testCurrencyCodePassesValidation()
+    {
+        $data = [
+            'name' => 'name of client',
+            'currency_code' => strtoupper('usd'),
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-TOKEN' => $this->token,
+        ])->postJson("/api/v1/clients/", $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals("1", $arr['data']['settings']['currency_id']);
+
+    }
+
+    public function testCurrencyIdRequired()
+    {
+        $data = [
+            'name' => 'name of client',
+            'settings' => [
+                'pdf_variables' => 'xx',
+            ],
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-TOKEN' => $this->token,
+        ])->postJson("/api/v1/clients/", $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals("1", $arr['data']['settings']['currency_id']);
+
+    }
+
+
+    public function testCurrencyIdValidationPut()
+    {
+        $data = [
+            'name' => 'name of client',
+            'settings' => [
+                'pdf_variables' => 'xx',
+                'currency_id' => '1000',
+            ],
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-TOKEN' => $this->token,
+        ])->putJson("/api/v1/clients/".$this->client->hashed_id, $data)
+        ->assertStatus(422);
+
+    }
+
+    public function testCurrencyIdValidationPost()
+    {
+        $data = [
+            'name' => 'name of client',
+            'settings' => [
+                'pdf_variables' => 'xx',
+                'currency_id' => '1000',
+            ],
+        ];
+
+
+        $response = $this->withHeaders([
+            'X-API-TOKEN' => $this->token,
+        ])->postJson("/api/v1/clients/", $data)
+        ->assertStatus(422);
+
+    }
+
+    public function testPdfVariablesUnset()
+    {
+        $data = [
+            'name' => 'name of client',
+            'settings' => [
+                'pdf_variables' => 'xx',
+                'currency_id' => '2'
+            ],
+        ];
+
+
+        $response = $this->withHeaders([
+            'X-API-TOKEN' => $this->token,
+        ])->putJson("/api/v1/clients/".$this->client->hashed_id, $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        $this->assertEquals("2", $arr['data']['settings']['currency_id']);
+        $this->assertArrayNotHasKey('pdf_variables', $arr['data']['settings']);
+
+
     }
 
     public function testBulkUpdates()
@@ -1088,7 +1183,7 @@ class ClientApiTest extends TestCase
     public function testClientCsvImport()
     {
         $settings = ClientSettings::defaults();
-        $settings->currency_id = "840";
+        $settings->currency_id = "1";
 
         $data = [
             'name' => $this->faker->firstName(),
@@ -1197,7 +1292,7 @@ class ClientApiTest extends TestCase
         $response->assertStatus(200);
 
         $arr = $response->json();
-
+        
         $this->assertEquals('3', $arr['data']['settings']['language_id']);
     }
 
@@ -1456,7 +1551,8 @@ class ClientApiTest extends TestCase
 
         $arr = $response->json();
 
-        $this->assertEquals($this->company->settings->country_id, $arr['data']['country_id']);
+        $response->assertStatus(422);
+        // $this->assertEquals($this->company->settings->country_id, $arr['data']['country_id']);
     }
 
     public function testRoundingDecimalsTwo()

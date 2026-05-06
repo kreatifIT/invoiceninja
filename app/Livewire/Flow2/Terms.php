@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,15 +22,17 @@ class Terms extends Component
 
     public $variables;
 
+    public $_key;
+
     public function mount()
     {
-        $this->variables = $this->getContext()['variables'];
+        $this->variables = $this->getContext($this->_key)['variables'];
     }
 
     #[Computed()]
     public function invoice()
     {
-        $_context = $this->getContext();
+        $_context = $this->getContext($this->_key);
 
         $invitation_id = $_context['invitation_id'];
 

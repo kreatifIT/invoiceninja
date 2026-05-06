@@ -1,5 +1,15 @@
 <?php
 
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
+
 namespace App\Models;
 
 use App\Utils\Number;
@@ -57,9 +67,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @method static \Illuminate\Database\Eloquent\Builder|Project withoutTrashed()
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Task> $tasks
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Expense> $expenses
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Invoice> $invoices
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Quote> $quotes
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Expense> $expenses
  * @mixin \Eloquent
  */
 class Project extends BaseModel
@@ -76,7 +86,7 @@ class Project extends BaseModel
      */
     public function searchableAs(): string
     {
-        return 'projects_v2';
+        return 'projects';
     }
 
     protected $fillable = [
@@ -107,34 +117,46 @@ class Project extends BaseModel
         return self::class;
     }
 
-    public function toSearchableArray()
+    public function toSearchableArray(): array
+    {
+        return config('scout.index_version', 'legacy') === 'v2'
+            ? $this->toSearchableArrayV2()
+            : $this->toSearchableArrayLegacy();
+    }
+
+    public function toSearchableArrayLegacy(): array
     {
         $locale = $this->company->locale();
         App::setLocale($locale);
 
         return [
-            'id' => (string)$this->company->db.":".$this->id,
-            'name' => ctrans('texts.project') . " " . $this->number . ' | ' . $this->name .  " | " . $this->client->present()->name(),
+            'id' => (string) $this->company->db . ":" . $this->id,
+            'name' => ctrans('texts.project') . " " . $this->number . ' | ' . $this->name . " | " . $this->client->present()->name(),
             'hashed_id' => $this->hashed_id,
-            'number' => (string)$this->number,
-            'is_deleted' => (bool)$this->is_deleted,
+            'number' => (string) $this->number,
+            'is_deleted' => (bool) $this->is_deleted,
             'task_rate' => (float) $this->task_rate,
             'budgeted_hours' => (float) $this->budgeted_hours,
             'due_date' => $this->due_date,
-            'custom_value1' => (string)$this->custom_value1,
-            'custom_value2' => (string)$this->custom_value2,
-            'custom_value3' => (string)$this->custom_value3,
-            'custom_value4' => (string)$this->custom_value4,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
             'company_key' => $this->company->company_key,
             'private_notes' => (string) $this->private_notes ?: '',
             'public_notes' => (string) $this->public_notes ?: '',
             'current_hours' => (int) $this->current_hours ?: 0,
         ];
     }
-    
+
+    public function toSearchableArrayV2(): array
+    {
+        return $this->toSearchableArrayLegacy();
+    }
+
     public function getScoutKey()
     {
-        return (string)$this->company->db.":".$this->id;
+        return (string) $this->company->db . ":" . $this->id;
     }
 
     public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -177,17 +199,17 @@ class Project extends BaseModel
         return $this->hasMany(Task::class);
     }
 
-    public function expenses(): HasMany
+    public function expenses(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Expense::class);
     }
 
-    public function invoices(): HasMany
+    public function invoices(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Invoice::class)->withTrashed();
     }
 
-    public function quotes(): HasMany
+    public function quotes(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Quote::class);
     }

@@ -74,7 +74,7 @@ class PayPal implements LivewireMethodInterface
         $invoice = $this->braintree->payment_hash->fee_invoice;
         $po_number = $invoice->po_number ?? $invoice->number ?? '';
 
-        $result = $this->braintree->gateway->transaction()->sale([
+        $data = [
             'amount' => $this->braintree->payment_hash->data->amount_with_fee,
             'paymentMethodToken' => $token,
             'deviceData' => $state['client-data'],
@@ -87,7 +87,9 @@ class PayPal implements LivewireMethodInterface
             ],
             'taxAmount' => $total_taxes,
             'purchaseOrderNumber' => substr($po_number, 0, 16),
-        ]);
+        ];
+
+        $result = $this->braintree->gateway->transaction()->sale($data);
 
         if ($result->success) {
             $this->braintree->logSuccessfulGatewayResponse(

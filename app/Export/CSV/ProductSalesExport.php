@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -58,6 +58,7 @@ class ProductSalesExport extends BaseExport
         'tax_amount1' => 'tax_amount1',
         'tax_amount2' => 'tax_amount2',
         'tax_amount3' => 'tax_amount3',
+        'tax_total' => 'tax_total',
         'is_amount_discount' => 'is_amount_discount',
         'currency' => 'currency',
         'client' => 'client',
@@ -96,6 +97,19 @@ class ProductSalesExport extends BaseExport
     }
 
 
+    public function buildHeader(): array
+    {
+        $header = parent::buildHeader();
+
+        return array_map(function ($col) {
+            $normalized = strtolower(trim(str_replace('texts.', '', $col)));
+            if ($normalized === 'markup') {
+                return $col . ' (%)';
+            }
+            return $col;
+        }, $header);
+    }
+
     public function run()
     {
         MultiDB::setDb($this->company->db);
@@ -107,7 +121,7 @@ class ProductSalesExport extends BaseExport
         $this->products = Product::query()->where('company_id', $this->company->id)->withTrashed()->get();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         if (count($this->input['report_keys']) == 0) {
@@ -128,6 +142,8 @@ class ProductSalesExport extends BaseExport
 
         $query = $this->filterByClients($query);
 
+        $query = $this->filterByUserPermissions($query);
+
         $query = $this->filterByProducts($query);
 
         $this->csv->insertOne($this->buildHeader());
@@ -136,7 +152,7 @@ class ProductSalesExport extends BaseExport
 
         if ($product_keys) {
             $product_keys = explode(",", $product_keys);
-            
+
             $product_keys = array_map(function ($product) {
                 return trim($product, "'");
             }, $product_keys);
@@ -179,6 +195,8 @@ class ProductSalesExport extends BaseExport
                 'tax_amount1' => $key->sum('tax_amount1'),
                 'tax_amount2' => $key->sum('tax_amount2'),
                 'tax_amount3' => $key->sum('tax_amount3'),
+                'tax_total' => $key->sum('tax_total'),
+                'gross_line_total' => $key->sum('gross_line_total'),
             ];
 
             return $this->convertFloats($data);
@@ -215,7 +233,7 @@ class ProductSalesExport extends BaseExport
 
     private function buildRow($invoice, $invoice_item): array
     {
-        $transformed_entity = (array)$invoice_item;
+        $transformed_entity = (array) $invoice_item;
         $transformed_entity['price'] = ($invoice_item->product_cost ?? 1) * ($invoice->exchange_rate ?? 1) ;
 
         $entity = [];
@@ -231,6 +249,8 @@ class ProductSalesExport extends BaseExport
                 $entity[$keyval] = '';
             }
         }
+
+        $entity['tax_amount'] = (float) ($invoice_item->tax_amount ?? 0);
 
         $entity = $this->decorateAdvancedFields($invoice, $entity);
 
@@ -256,47 +276,48 @@ class ProductSalesExport extends BaseExport
         $entity['net_total'] = $entity['price'] - $entity['discount'];
         $entity['profit'] = $entity['price'] - $entity['discount'] - $entity['cost'];
 
-        if (strlen($entity['tax_name1']) > 1) {
-            $entity['tax_name1'] = $entity['tax_name1'] . ' [' . $entity['tax_rate1'] . '%]';
-            $entity['tax_amount1'] = $this->calculateTax($invoice, $entity['line_total'], $entity['tax_rate1']);
+        $total_tax = (float) ($entity['tax_amount'] ?? 0);
+        $rate1 = (float) ($entity['tax_rate1'] ?? 0);
+        $rate2 = (float) ($entity['tax_rate2'] ?? 0);
+        $rate3 = (float) ($entity['tax_rate3'] ?? 0);
+
+        if ($total_tax > 0 && ($rate1 + $rate2 + $rate3) > 0) {
+            if ($invoice->uses_inclusive_taxes) {
+                $w1 = $rate1 > 0 ? $rate1 / (100 + $rate1) : 0;
+                $w2 = $rate2 > 0 ? $rate2 / (100 + $rate2) : 0;
+                $w3 = $rate3 > 0 ? $rate3 / (100 + $rate3) : 0;
+            } else {
+                $w1 = $rate1;
+                $w2 = $rate2;
+                $w3 = $rate3;
+            }
+
+            $w_total = $w1 + $w2 + $w3;
+
+            $entity['tax_amount1'] = $w_total > 0 ? round($total_tax * $w1 / $w_total, 2) : 0;
+            $entity['tax_amount2'] = $w_total > 0 ? round($total_tax * $w2 / $w_total, 2) : 0;
+            $entity['tax_amount3'] = $w_total > 0 ? round($total_tax * $w3 / $w_total, 2) : 0;
         } else {
             $entity['tax_amount1'] = 0;
-        }
-
-        if (strlen($entity['tax_name2']) > 1) {
-            $entity['tax_name2'] = $entity['tax_name2'] . ' [' . $entity['tax_rate2'] . '%]';
-            $entity['tax_amount2'] = $this->calculateTax($invoice, $entity['line_total'], $entity['tax_rate2']);
-        } else {
             $entity['tax_amount2'] = 0;
-        }
-
-        if (strlen($entity['tax_name3']) > 1) {
-            $entity['tax_name3'] = $entity['tax_name3'] . ' [' . $entity['tax_rate3'] . '%]';
-            $entity['tax_amount3'] = $this->calculateTax($invoice, $entity['line_total'], $entity['tax_rate3']);
-        } else {
             $entity['tax_amount3'] = 0;
         }
 
-        return $entity;
-    }
+        $entity['tax_total'] = $total_tax;
 
-    /**
-     * calculateTax
-     *
-     * @param  Invoice $invoice
-     * @param  float $amount
-     * @param  float $tax_rate
-     * @return float
-     */
-    private function calculateTax(Invoice $invoice, float $amount, float $tax_rate): float
-    {
-        $amount = $amount - ($amount * ($invoice->discount / 100));
-
-        if ($invoice->uses_inclusive_taxes) {
-            return round($amount - ($amount / (1 + ($tax_rate / 100))), 2);
-        } else {
-            return round(($amount * $tax_rate / 100), 2);
+        if (isset($entity['tax_name1']) && strlen($entity['tax_name1']) > 1) {
+            $entity['tax_name1'] = $entity['tax_name1'] . ' [' . $rate1 . '%]';
         }
+
+        if (isset($entity['tax_name2']) && strlen($entity['tax_name2']) > 1) {
+            $entity['tax_name2'] = $entity['tax_name2'] . ' [' . $rate2 . '%]';
+        }
+
+        if (isset($entity['tax_name3']) && strlen($entity['tax_name3']) > 1) {
+            $entity['tax_name3'] = $entity['tax_name3'] . ' [' . $rate3 . '%]';
+        }
+
+        return $entity;
     }
 
 
@@ -323,14 +344,4 @@ class ProductSalesExport extends BaseExport
         return 0;
     }
 
-    /**
-     * getProduct
-     *
-     * @param  string $product_key
-     * @return ?\Illuminate\Database\Eloquent\Model
-     */
-    // private function getProduct(string $product_key)
-    // {
-    //     return $this->products->firstWhere('product_key', $product_key);
-    // }
 }

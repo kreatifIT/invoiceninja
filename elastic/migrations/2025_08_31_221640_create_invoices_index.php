@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateInvoicesIndex implements MigrationInterface
 {
@@ -13,6 +14,14 @@ final class CreateInvoicesIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+
+        $indexExistsResponse = $client->indices()->exists(['index' => 'invoices']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
         $mapping = [
             'properties' => [
                 // Core invoice fields
@@ -76,7 +85,7 @@ final class CreateInvoicesIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('invoices_v2', $mapping);
+        Index::createRaw('invoices', $mapping);
     }
 
     /**
@@ -84,6 +93,6 @@ final class CreateInvoicesIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('invoices_v2');
+        Index::dropIfExists('invoices');
     }
 }

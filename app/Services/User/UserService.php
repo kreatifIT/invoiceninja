@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,14 +22,12 @@ use App\Utils\Ninja;
 
 class UserService
 {
-    public function __construct(public User $user)
-    {
-    }
+    public function __construct(public User $user) {}
 
     public function invite(Company $company, bool $is_react = true)
     {
 
-        if(Ninja::isHosted() && $company->account->users()->count() == 1) {
+        if (Ninja::isHosted() && $company->account->users()->count() == 1) {
             $company = Company::on('db-ninja-01')->find(config('ninja.ninja_default_company_id'));
         }
 
@@ -40,7 +38,7 @@ class UserService
             $nmo->to_user = $this->user;
             $nmo->settings = $company->settings;
 
-            if(\App\Utils\Ninja::isHosted()) {
+            if (\App\Utils\Ninja::isHosted()) {
                 $nmo->transport = 'default';
             }
 
@@ -48,7 +46,7 @@ class UserService
 
             Ninja::registerNinjaUser($this->user);
         } catch (\Exception $e) {
-            nlog("I couldn't send the verification email ".$e->getMessage());
+            nlog("I couldn't send the verification email " . $e->getMessage());
         }
 
         return $this->user;

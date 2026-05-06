@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -27,9 +27,7 @@ class AdminEmailMailable extends Mailable
      *
      * @return void
      */
-    public function __construct(public EmailObject $email_object)
-    {
-    }
+    public function __construct(public EmailObject $email_object) {}
 
     /**
      * Get the message envelope.
@@ -56,13 +54,12 @@ class AdminEmailMailable extends Mailable
      */
     public function content()
     {
-
         return new Content(
             view: 'email.admin.generic',
             text: 'email.admin.generic_text',
             with: [
                 'title' => $this->email_object->subject,
-                'message' => $this->email_object->body,
+                'content' => $this->email_object->body,
                 'url' => $this->email_object->url ?? null,
                 'button' => $this->email_object->button ?? null,
                 'signature' => $this->email_object->company->owner()->signature,
@@ -84,7 +81,13 @@ class AdminEmailMailable extends Mailable
         $attachments  = [];
 
         $attachments = collect($this->email_object->attachments)->map(function ($file) {
-            return Attachment::fromData(fn () => base64_decode($file['file']), $file['name']);
+
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime  = finfo_buffer($finfo, base64_decode($file['file']));
+            $mime = $mime ?: 'application/octet-stream';
+            $finfo = null;
+
+            return Attachment::fromData(fn() => base64_decode($file['file']), $file['name'])->withMime($mime);
         });
 
         return $attachments->toArray();

@@ -15,6 +15,7 @@ namespace App\Services\Pdf;
 use App\Jobs\EDocument\CreateEDocument;
 use App\Models\Company;
 use App\Models\CreditInvitation;
+use App\Utils\Gotenberg\GotenbergPdf;
 use App\Models\Invoice;
 use App\Models\InvoiceInvitation;
 use App\Models\PurchaseOrderInvitation;
@@ -33,7 +34,7 @@ class PdfService
     use PdfMaker;
     use PageNumbering;
 
-    public InvoiceInvitation | QuoteInvitation | CreditInvitation | RecurringInvoiceInvitation | PurchaseOrderInvitation $invitation;
+    public InvoiceInvitation|QuoteInvitation|CreditInvitation|RecurringInvoiceInvitation|PurchaseOrderInvitation $invitation;
 
     public Company $company;
 
@@ -52,6 +53,8 @@ class PdfService
     private float $start_time;
 
     public float $execution_time;
+
+    private ?string $json_design_html = null;
 
     public const DELIVERY_NOTE = 'delivery_note';
     public const STATEMENT = 'statement';
@@ -92,10 +95,10 @@ class PdfService
         try {
 
             $html = $this->getHtml();
-            // nlog($html); 
+            // nlog($html);
             $pdf = $this->resolvePdfEngine($html);
 
-            $numbered_pdf = $this->pageNumbering($pdf, $this->company);
+            $numbered_pdf = $this->pageNumbering($pdf, $this->company, $this->config->settings);
 
             if ($numbered_pdf) {
                 $pdf = $numbered_pdf;
@@ -118,17 +121,33 @@ class PdfService
     /**
      * Renders the dom document to HTML
      *
-     * @return string
+     * @return void
      *
      */
+    public function setJsonDesignHtml(string $html): void
+    {
+        $this->json_design_html = $html;
+    }
+
     public function getHtml(): string
     {
+        // If JSON design was used, return the pre-generated HTML
+        if ($this->json_design_html !== null) {
+            $html = \App\Services\Pdf\Purify::clean($this->json_design_html);
+
+            if (config('ninja.log_pdf_html')) {
+                nlog($html);
+            }
+
+            return $html;
+        }
 
         $html = \App\Services\Pdf\Purify::clean($this->builder->document->saveHTML());
 
         if (config('ninja.log_pdf_html')) {
             nlog($html);
         }
+
         return $html;
     }
 
@@ -143,15 +162,156 @@ class PdfService
 
         $this->config = (new PdfConfiguration($this))->init();
 
-        $this->html_variables = ($this->invitation instanceof \App\Models\PurchaseOrderInvitation) ?
-                                    (new VendorHtmlEngine($this->invitation))->generateLabelsAndValues() :
-                                    (new HtmlEngine($this->invitation))->generateLabelsAndValues();
+        // For JSON-designer documents, apply per-template documentSettings overrides
+        // onto a cloned settings object before HtmlEngine reads them. This is how
+        // show_paid_stamp / show_shipping_address / fonts / page size on the design
+        // take precedence over the company defaults.
+        $this->applyJsonDesignSettingsOverrides();
 
-        $this->designer = (new PdfDesigner($this))->build();
+        $htmlEngine = ($this->invitation instanceof \App\Models\PurchaseOrderInvitation)
+                                    ? new VendorHtmlEngine($this->invitation)
+                                    : new HtmlEngine($this->invitation);
 
-        $this->builder = (new PdfBuilder($this))->build();
+        // HtmlEngine pulls settings directly from the client/company on construct,
+        // so propagate our resolved (possibly overridden) settings before it reads them.
+        $htmlEngine->setSettings($this->config->settings);
+
+        $this->html_variables = $htmlEngine->generateLabelsAndValues();
+
+        // Check if this is a JSON-based design
+        if ($this->isJsonDesign()) {
+            nlog("Using JSON Design Service for PDF generation");
+            $this->buildWithJsonDesign();
+        } else {
+            // Traditional flow
+            $this->designer = (new PdfDesigner($this))->build();
+            $this->builder = (new PdfBuilder($this))->build();
+        }
 
         return $this;
+    }
+
+    /**
+     * Build a DocumentSettingsResolver from the design and swap the merged
+     * settings on PdfConfiguration with the resolved clone so all downstream
+     * consumers (HtmlEngine, PdfBuilder, JsonToSectionsAdapter) see the
+     * per-template overrides without any of them needing to know they exist.
+     *
+     * No-op for non-JSON designs and for JSON designs with no documentSettings.
+     */
+    private function applyJsonDesignSettingsOverrides(): void
+    {
+        if (!$this->isJsonDesign()) {
+            return;
+        }
+
+        $designData = $this->config->decodedDesign();
+
+        $resolver = new DocumentSettingsResolver($designData, $this->config->settings);
+
+        if (!$resolver->hasOverrides()) {
+            return;
+        }
+
+        $this->config->document_settings_resolver = $resolver;
+        $this->config->settings = $resolver->resolve();
+    }
+
+    /**
+     * Check if the current design is a JSON-based design
+     *
+     * @return bool
+     */
+    private function isJsonDesign(): bool
+    {
+        if (!isset($this->config->design) || !$this->config->design->is_custom) {
+            return false;
+        }
+
+        $designData = $this->config->decodedDesign();
+
+        return $designData !== null && isset($designData['blocks']);
+    }
+
+    /**
+     * Build PDF using JSON Design Service
+     *
+     * @return void
+     */
+    private function buildWithJsonDesign(): void
+    {
+        $designData = $this->config->decodedDesign();
+
+        // Ensure pageSettings exists (use defaults if missing)
+        if (!isset($designData['pageSettings'])) {
+            $designData['pageSettings'] = [
+                'pageSize' => 'a4',
+                'orientation' => 'portrait',
+                'marginTop' => '10mm',
+                'marginRight' => '10mm',
+                'marginBottom' => '10mm',
+                'marginLeft' => '10mm',
+                'fontFamily' => 'Inter, sans-serif',
+                'fontSize' => '12px',
+                'textColor' => '#374151',
+                'lineHeight' => '1.5',
+                'backgroundColor' => '#ffffff',
+            ];
+            nlog("No pageSettings found, using defaults");
+        }
+
+        nlog("Attempting to build PDF with JSON Design Service");
+        nlog("Design data keys: " . json_encode(array_keys($designData)));
+        nlog("Blocks count: " . count($designData['blocks'] ?? []));
+
+        // Create JSON design service
+        $jsonService = new JsonDesignService($this, $designData);
+
+        // Validate the design
+        if (!$jsonService->isValid()) {
+            nlog("Invalid JSON design structure - cannot use JSON designer or traditional fallback");
+            throw new \Exception("Invalid JSON design structure. Design must have 'blocks' and valid block structure.");
+        }
+
+        // Set document type to prevent default section generation
+        $this->document_type = 'json_design';
+
+        // Initialize designer with empty template (will be set by JsonDesignService)
+        $this->designer = new PdfDesigner($this);
+        $this->designer->template = '';
+
+        // Build the HTML using JSON design service
+        try {
+            nlog("Building HTML with JSON Design Service");
+            nlog("HTML variables count: " . count($this->html_variables['values'] ?? []));
+            nlog("Sample variables: " . json_encode(array_slice($this->html_variables['values'] ?? [], 0, 5)));
+
+            $this->json_design_html = $jsonService->build();
+
+            nlog("JSON Design Service build completed successfully");
+            nlog("HTML length: " . strlen($this->json_design_html));
+
+            // Check if variables were replaced
+            $hasUnreplacedVars = preg_match('/\$company\.|invoice\.|client\./', $this->json_design_html);
+            nlog("Has unreplaced variables: " . ($hasUnreplacedVars ? 'YES ⚠️' : 'NO ✓'));
+
+            if ($hasUnreplacedVars) {
+                nlog("WARNING: Variables were not replaced! Checking first 500 chars:");
+                nlog(substr($this->json_design_html, 0, 500));
+            }
+        } catch (\Exception $e) {
+            nlog("JSON Design Service failed: " . $e->getMessage());
+            nlog("Stack trace: " . $e->getTraceAsString());
+            throw $e; // Re-throw instead of falling back since traditional flow won't work with JSON structure
+        }
+
+        // Create a minimal builder instance for compatibility
+        // Initialize it with a minimal DOM document to prevent null errors
+        $this->builder = new PdfBuilder($this);
+        $this->builder->document = new \DOMDocument();
+        $this->builder->document->loadHTML('<!DOCTYPE html><html><body></body></html>');
+
+        nlog("JSON Design build complete");
     }
 
     /**
@@ -165,6 +325,8 @@ class PdfService
             $pdf = (new Phantom())->convertHtmlToPdf($html);
         } elseif (config('ninja.invoiceninja_hosted_pdf_generation') || config('ninja.pdf_generator') == 'hosted_ninja') {
             $pdf = (new NinjaPdf())->build($html);
+        } elseif (config('ninja.pdf_generator') == 'gotenberg') {
+            $pdf = (new GotenbergPdf())->convertHtmlToPdf($html);
         } else {
             $pdf = $this->makePdf(null, null, $html);
         }

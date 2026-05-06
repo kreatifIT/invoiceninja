@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -82,6 +82,12 @@ class TaskExport extends BaseExport
             $query = $this->addClientFilter($query, $clients);
         }
 
+        if ($this->input['status'] ?? false) {
+            $query = $this->addTaskStatusFilter($query, $this->input['status']);
+        }
+
+        $query = $this->filterByUserPermissions($query);
+
         $document_attachments = &$this->input['document_email_attachment'];
 
         if ($document_attachments) {
@@ -98,7 +104,7 @@ class TaskExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
@@ -143,7 +149,7 @@ class TaskExport extends BaseExport
         return array_merge(['columns' => $header], $this->storage_item_array);
     }
 
-    private function buildRow(Task $task)
+    protected function buildRow(Task $task)
     {
         $entity = [];
         $transformed_entity = $this->entity_transformer->transform($task);
@@ -191,13 +197,13 @@ class TaskExport extends BaseExport
 
         foreach ($logs as $key => $item) {
             if (in_array('task.start_date', $this->input['report_keys']) || in_array('start_date', $this->input['report_keys'])) {
-                $carbon_object = Carbon::createFromTimeStamp((int)$item[0])->setTimezone($timezone_name);
+                $carbon_object = Carbon::createFromTimeStamp((int) $item[0])->setTimezone($timezone_name);
                 $entity['task.start_date'] = $carbon_object->format($date_format_default);
                 $entity['task.start_time'] = $carbon_object->format('H:i:s');
             }
 
             if ((in_array('task.end_date', $this->input['report_keys']) || in_array('end_date', $this->input['report_keys'])) && $item[1] > 0) {
-                $carbon_object = Carbon::createFromTimeStamp((int)$item[1])->setTimezone($timezone_name);
+                $carbon_object = Carbon::createFromTimeStamp((int) $item[1])->setTimezone($timezone_name);
                 $entity['task.end_date'] = $carbon_object->format($date_format_default);
                 $entity['task.end_time'] = $carbon_object->format('H:i:s');
             }
@@ -231,7 +237,7 @@ class TaskExport extends BaseExport
             }
 
             if (in_array('task.item_notes', $this->input['report_keys']) || in_array('item_notes', $this->input['report_keys'])) {
-                $entity['task.item_notes'] = isset($item[2]) ? (string)$item[2] : '';
+                $entity['task.item_notes'] = isset($item[2]) ? (string) $item[2] : '';
             }
 
 
@@ -261,6 +267,7 @@ class TaskExport extends BaseExport
      */
     protected function addTaskStatusFilter(Builder $query, string $status): Builder
     {
+
         /** @var array $status_parameters */
         $status_parameters = explode(',', $status);
 
@@ -274,6 +281,16 @@ class TaskExport extends BaseExport
 
         if (in_array('uninvoiced', $status_parameters)) {
             $query->whereNull('invoice_id');
+        }
+
+        $keys = $this->transformKeys($status_parameters);
+
+        $keys = collect($keys)->filter(function ($key) {
+            return is_int($key);
+        })->toArray();
+
+        if (count($keys) > 0) {
+            $query->whereIn('status_id', $keys);
         }
 
         return $query;

@@ -12,13 +12,8 @@ class PaymentSchedule
     public string $template = 'payment_schedule';
 
     /**
-     * 
-     * @var array(
-     *  'id' => int,
-     *  'date' => string,
-     *  'amount' => float,
-     *  'is_amount' => bool
-     * )
+     *
+     * @var array<array{id: int, date: string, amount: float, is_amount: bool}>
      */
     public array $schedule = [];
 

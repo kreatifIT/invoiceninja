@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,6 +15,8 @@ namespace App\Observers;
 use App\Jobs\Util\WebhookHandler;
 use App\Models\Payment;
 use App\Models\Webhook;
+use App\Services\Quickbooks\QuickbooksBatchCollector;
+use App\Services\Quickbooks\QuickbooksService;
 
 class PaymentObserver
 {
@@ -34,6 +36,20 @@ class PaymentObserver
 
         if ($subscriptions) {
             WebhookHandler::dispatch(Webhook::EVENT_CREATE_PAYMENT, $payment, $payment->company, 'invoices,client')->delay(20);
+        }
+
+        if ($payment->company->shouldPushToQuickbooks('payment')
+           && empty(QuickbooksService::$importing[$payment->company_id])
+           && $payment->status_id === Payment::STATUS_COMPLETED) {
+            // LOW priority (30s window) so the invoice's NORMAL batch (10s) flushes first —
+            // the payment's LinkedTxn lookup needs invoice->sync->qb_id to be populated.
+            QuickbooksBatchCollector::collect(
+                'payment',
+                $payment->id,
+                $payment->company->db,
+                $payment->company_id,
+                QuickbooksBatchCollector::PRIORITY_LOW,
+            );
         }
     }
 
@@ -62,6 +78,17 @@ class PaymentObserver
 
         if ($subscriptions) {
             WebhookHandler::dispatch($event, $payment, $payment->company, 'invoices,client')->delay(25);
+        }
+
+        if ($payment->company->shouldPushToQuickbooks('payment')
+           && empty(QuickbooksService::$importing[$payment->company_id])) {
+            QuickbooksBatchCollector::collect(
+                'payment',
+                $payment->id,
+                $payment->company->db,
+                $payment->company_id,
+                QuickbooksBatchCollector::PRIORITY_LOW,
+            );
         }
     }
 

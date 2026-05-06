@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -26,7 +26,7 @@ class LocationData extends AbstractService
 
     private ?Location $shippingLocation;
 
-    public function __construct(private Invoice | Quote | Credit | RecurringInvoice $entity)
+    public function __construct(private Invoice|Quote|Credit|RecurringInvoice $entity)
     {
         $this->setLocations();
     }
@@ -47,9 +47,9 @@ class LocationData extends AbstractService
         return $this;
     }
 
-    public function run(): array
+    public function run(bool $setCountries = true): array
     {
-        return [
+        $location = [
             // Business Address (from business location or client default)
             'location_name' => $this->getLocationName(),
             'address' => $this->getBusinessAddress(),
@@ -75,6 +75,13 @@ class LocationData extends AbstractService
             'shipping_country_code' => $this->getShippingCountryCode(),
             'shipping_exists' => strlen($this->getShippingAddress1()) > 0,
         ];
+
+        if (!$setCountries) {
+            unset($location['country']);
+            unset($location['shipping_country']);
+        }
+
+        return $location;
     }
 
     private function getLocationName(): string
@@ -130,16 +137,16 @@ class LocationData extends AbstractService
         $str = ' ';
 
         if ($address1 = $this->getBusinessAddress1()) {
-            $str .= e($address1).'<br/>';
+            $str .= e($address1) . '<br/>';
         }
         if ($address2 = $this->getBusinessAddress2()) {
-            $str .= e($address2).'<br/>';
+            $str .= e($address2) . '<br/>';
         }
         if ($cityState = $this->getCityState()) {
-            $str .= e($cityState).'<br/>';
+            $str .= e($cityState) . '<br/>';
         }
         if ($country = $this->getBusinessCountryName()) {
-            $str .= e($country).'<br/>';
+            $str .= e($country) . '<br/>';
         }
 
         return $str;
@@ -169,16 +176,16 @@ class LocationData extends AbstractService
         $str = ' ';
 
         if ($address1 = $this->getShippingAddress1()) {
-            $str .= e($address1).'<br/>';
+            $str .= e($address1) . '<br/>';
         }
         if ($address2 = $this->getShippingAddress2()) {
-            $str .= e($address2).'<br/>';
+            $str .= e($address2) . '<br/>';
         }
         if ($cityState = $this->getShippingCityState()) {
-            $str .= e($cityState).'<br/>';
+            $str .= e($cityState) . '<br/>';
         }
         if ($country = $this->getShippingCountryName()) {
-            $str .= e($country).'<br/>';
+            $str .= e($country) . '<br/>';
         }
 
         return $str;

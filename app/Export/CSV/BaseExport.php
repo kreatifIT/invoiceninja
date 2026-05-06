@@ -5,19 +5,20 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Export\CSV;
 
-use App\Jobs\Credit\ZipCredits;
+use Str;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Quote;
 use App\Models\Client;
 use App\Models\Credit;
+use App\Models\Design;
 use App\Models\Vendor;
 use App\Utils\Helpers;
 use App\Models\Company;
@@ -26,21 +27,23 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Document;
+use League\Csv\Writer;
 use League\Fractal\Manager;
+use App\Jobs\Quote\ZipQuotes;
 use App\Models\ClientContact;
 use App\Models\PurchaseOrder;
 use Illuminate\Support\Carbon;
+use App\Jobs\Credit\ZipCredits;
 use App\Utils\Traits\MakesHash;
 use App\Models\RecurringInvoice;
-use App\Jobs\Document\ZipDocuments;
 use App\Jobs\Invoice\ZipInvoices;
-use App\Jobs\PurchaseOrder\ZipPurchaseOrders;
-use App\Jobs\Quote\ZipQuotes;
+use App\Jobs\Document\ZipDocuments;
 use App\Transformers\TaskTransformer;
 use App\Transformers\PaymentTransformer;
 use Illuminate\Database\Eloquent\Builder;
+use App\Services\Template\TemplateService;
+use App\Jobs\PurchaseOrder\ZipPurchaseOrders;
 use League\Fractal\Serializer\ArraySerializer;
-use Str;
 
 class BaseExport
 {
@@ -57,6 +60,17 @@ class BaseExport
     public string $start_date = '';
 
     public string $end_date = '';
+
+    protected bool $skip_float_conversion = false;
+
+    protected array $raw_rows = [];
+
+    protected array $non_summable_patterns = [
+        'tax_rate',
+        'exchange_rate',
+        'is_amount_discount',
+        'uses_inclusive_taxes',
+    ];
 
     public string $client_description = 'All Clients';
 
@@ -138,10 +152,26 @@ class BaseExport
         'classification' => 'client.classification',
     ];
 
+    protected array $location_report_keys = [
+        'name' => 'location.name',
+        'address1' => 'location.address1',
+        'address2' => 'location.address2',
+        'city' => 'location.city',
+        'state' => 'location.state',
+        'postal_code' => 'location.postal_code',
+        'country' => 'location.country_id',
+        'custom_value1' => 'location.custom_value1',
+        'custom_value2' => 'location.custom_value2',
+        'custom_value3' => 'location.custom_value3',
+        'custom_value4' => 'location.custom_value4',
+        'is_shipping' => 'location.is_shipping_location',
+    ];
+
     protected array $invoice_report_keys = [
         'name' => 'client.name',
         "currency" => "client.currency_id",
         "invoice_number" => "invoice.number",
+        "subtotal" => "invoice.subtotal",
         "amount" => "invoice.amount",
         "balance" => "invoice.balance",
         "paid_to_date" => "invoice.paid_to_date",
@@ -257,6 +287,7 @@ class BaseExport
         'terms' => 'purchase_order.terms',
         'total_taxes' => 'purchase_order.total_taxes',
         'currency_id' => 'purchase_order.currency_id',
+        'subtotal' => 'purchase_order.subtotal',
     ];
 
     protected array $product_report_keys  = [
@@ -305,7 +336,7 @@ class BaseExport
         'line_total' => 'item.line_total',
         'gross_line_total' => 'item.gross_line_total',
         'tax_amount' => 'item.tax_amount',
-        'product_cost' => 'item.product_cost'
+        'product_cost' => 'item.product_cost',
     ];
 
     protected array $quote_report_keys = [
@@ -346,6 +377,7 @@ class BaseExport
         'tax_rate1' => 'quote.tax_rate1',
         'tax_rate2' => 'quote.tax_rate2',
         'tax_rate3' => 'quote.tax_rate3',
+        'subtotal' => 'quote.subtotal',
     ];
 
     protected array $credit_report_keys = [
@@ -380,7 +412,8 @@ class BaseExport
         "tax_amount" => "credit.total_taxes",
         "assigned_user" => "credit.assigned_user_id",
         "user" => "credit.user_id",
-  ];
+        'subtotal' => 'credit.subtotal',
+    ];
 
     protected array $payment_report_keys = [
         'name' => 'client.name',
@@ -401,7 +434,7 @@ class BaseExport
         "custom_value4" => "payment.custom_value4",
         "user" => "payment.user_id",
         "assigned_user" => "payment.assigned_user_id",
-  ];
+    ];
 
     protected array $expense_report_keys = [
         'amount' => 'expense.amount',
@@ -499,15 +532,15 @@ class BaseExport
 
     protected function resolveKey($key, $entity, $transformer): string
     {
-        $parts = explode(".", $key);
+        $parts = explode(".", $key ?? '');
 
-        if (!is_array($parts) || count($parts) < 2) {
+        if (count($parts) < 2) {
             return '';
         }
 
         $value = '';
 
-        match($parts[0]) {
+        match ($parts[0]) {
             'contact' => $value = $this->resolveClientContactKey($parts[1], $entity, $transformer),
             'client' => $value = $this->resolveClientKey($parts[1], $entity, $transformer),
             'expense' => $value = $this->resolveExpenseKey($parts[1], $entity, $transformer),
@@ -864,7 +897,7 @@ class BaseExport
 
         if (isset($this->input['product_key'])) {
 
-$products = str_getcsv($this->input['product_key'], ',', "'");
+            $products = str_getcsv($this->input['product_key'], ',', "'");
 
             $products = array_map(function ($product) {
                 return trim($product, "'");
@@ -908,16 +941,18 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
      * Add Vendor Filter
      *
      * @param  \Illuminate\Database\Eloquent\Builder $query
-     * @param  string $vendors
+     * @param  ?string $vendors
      *
      * @return Builder
      */
-    protected function addVendorFilter(Builder$query, string $vendors): Builder
+    protected function addVendorFilter(Builder $query, ?string $vendors): Builder
     {
 
-        if (is_string($vendors)) {
-            $vendors =  explode(',', $vendors);
+        if (!is_string($vendors)) {
+            return $query;
         }
+
+        $vendors = explode(',', $vendors);
 
         $transformed_vendors = $this->transformKeys($vendors);
 
@@ -932,17 +967,18 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
      * AddProjectFilter
      *
      * @param  \Illuminate\Database\Eloquent\Builder $query
-     * @param  string $projects
+     * @param  ?string $projects
      *
      * @return Builder
      */
-    protected function addProjectFilter(Builder $query, string $projects): Builder
+    protected function addProjectFilter(Builder $query, ?string $projects): Builder
     {
 
-        if (is_string($projects)) {
-            $projects =  explode(',', $projects);
+        if (!is_string($projects)) {
+            return $query;
         }
-
+        
+        $projects =  explode(',', $projects);
         $transformed_projects = $this->transformKeys($projects);
 
         if (count($transformed_projects) > 0) {
@@ -956,16 +992,18 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
      * Add Category Filter
      *
      * @param  \Illuminate\Database\Eloquent\Builder $query
-     * @param  string $expense_categories
+     * @param  ?string $expense_categories
      *
      * @return Builder
      */
-    protected function addCategoryFilter(Builder $query, string $expense_categories): Builder
+    protected function addCategoryFilter(Builder $query, ?string $expense_categories): Builder
     {
 
-        if (is_string($expense_categories)) {
-            $expense_categories =  explode(',', $expense_categories);
+        if (!is_string($expense_categories)) {
+            return $query;
         }
+        
+        $expense_categories =  explode(',', $expense_categories);
 
         $transformed_expense_categories = $this->transformKeys($expense_categories);
 
@@ -988,10 +1026,9 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
     protected function addPaymentStatusFilters(Builder $query, string $status): Builder
     {
 
-        /** @var array $status_parameters */
         $status_parameters = explode(',', $status);
 
-        if ((count($status_parameters) == 0) || in_array('all', $status_parameters)) {
+        if (in_array('all', $status_parameters)) {
             return $query;
         }
 
@@ -1046,10 +1083,9 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
     protected function addRecurringInvoiceStatusFilter(Builder $query, string $status): Builder
     {
 
-        /** @var array $status_parameters */
         $status_parameters = explode(',', $status);
 
-        if (in_array('all', $status_parameters) || count($status_parameters) == 0) {
+        if (in_array('all', $status_parameters)) {
             return $query;
         }
 
@@ -1155,10 +1191,9 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
     protected function addPurchaseOrderStatusFilter(Builder $query, string $status): Builder
     {
 
-        /** @var array $status_parameters */
         $status_parameters = explode(',', $status);
 
-        if (in_array('all', $status_parameters) || count($status_parameters) == 0) {
+        if (in_array('all', $status_parameters)) {
             return $query;
         }
 
@@ -1204,10 +1239,9 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
     protected function addInvoiceStatusFilter(Builder $query, string $status): Builder
     {
 
-        /** @var array $status_parameters */
         $status_parameters = explode(',', $status);
 
-        if (in_array('all', $status_parameters) || count($status_parameters) == 0) {
+        if (in_array('all', $status_parameters)) {
             return $query;
         }
 
@@ -1291,10 +1325,13 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
                 $this->end_date = 'All available data';
                 return $query;
             case 'last7':
+            case 'last_7_days':
+            case 'last7_days':
                 $this->start_date = now()->subDays(7)->format('Y-m-d');
                 $this->end_date = now()->format('Y-m-d');
                 return $query->whereBetween($this->date_key, [now()->subDays(7), now()])->orderBy($this->date_key, 'ASC');
             case 'last30':
+            case 'last_30_days':
                 $this->start_date = now()->subDays(30)->format('Y-m-d');
                 $this->end_date = now()->format('Y-m-d');
                 return $query->whereBetween($this->date_key, [now()->subDays(30), now()])->orderBy($this->date_key, 'ASC');
@@ -1382,42 +1419,42 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
             $prefix = '';
 
             if (!$key) {
-                $prefix = stripos($value, 'client.') !== false ? ctrans('texts.client')." " : ctrans('texts.contact')." ";
+                $prefix = stripos($value, 'client.') !== false ? ctrans('texts.client') . " " : ctrans('texts.contact') . " ";
                 $key = array_search($value, $this->client_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.invoice')." ";
+                $prefix = ctrans('texts.invoice') . " ";
                 $key = array_search($value, $this->invoice_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.recurring_invoice')." ";
+                $prefix = ctrans('texts.recurring_invoice') . " ";
                 $key = array_search($value, $this->recurring_invoice_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.payment')." ";
+                $prefix = ctrans('texts.payment') . " ";
                 $key = array_search($value, $this->payment_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.quote')." ";
+                $prefix = ctrans('texts.quote') . " ";
                 $key = array_search($value, $this->quote_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.credit')." ";
+                $prefix = ctrans('texts.credit') . " ";
                 $key = array_search($value, $this->credit_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.item')." ";
+                $prefix = ctrans('texts.item') . " ";
                 $key = array_search($value, $this->item_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.expense')." ";
+                $prefix = ctrans('texts.expense') . " ";
                 $key = array_search($value, $this->expense_report_keys);
 
                 if (!$key && $value == 'expense.category') {
@@ -1426,23 +1463,28 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.task')." ";
+                $prefix = ctrans('texts.task') . " ";
                 $key = array_search($value, $this->task_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.vendor')." ";
+                $prefix = ctrans('texts.vendor') . " ";
                 $key = array_search($value, $this->vendor_report_keys);
             }
 
             if (!$key) {
-                $prefix = ctrans('texts.purchase_order')." ";
+                $prefix = ctrans('texts.purchase_order') . " ";
                 $key = array_search($value, $this->purchase_order_report_keys);
             }
 
             if (!$key) {
                 $prefix = '';
                 $key = array_search($value, $this->product_report_keys);
+            }
+
+            if (!$key) {
+                $prefix = stripos($value, 'location.') !== false ? ctrans('texts.location') . " " : '';
+                $key = array_search($value, $this->location_report_keys);
             }
 
             if (!$key) {
@@ -1464,6 +1506,7 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
             $key = str_replace('payment.', '', $key);
             $key = str_replace('expense.', '', $key);
             $key = str_replace('product.', '', $key);
+            $key = str_replace('location.', '', $key);
             $key = str_replace('task.', '', $key);
 
 
@@ -1476,35 +1519,43 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
                 $value = Str::after($value, 'tax.');
                 $header[] = $value;
             } elseif (stripos($value, 'custom_value') !== false) {
-                
+
                 $parts = explode(".", $value);
 
-                if (count($parts) == 2 && in_array($parts[0], ['contact', 'client','credit','quote','invoice','purchase_order','recurring_invoice'])) {
-                    $entity = $parts[0].substr($parts[1], -1);
-                    $prefix = ctrans("texts.".$parts[0]);
-                    $fallback = "custom_value".substr($parts[1], -1);
-                    $custom_field_label = (string)$helper->makeCustomField($this->company->custom_fields, $entity);
+                if (count($parts) == 2 && in_array($parts[0], ['contact', 'client','credit','quote','invoice','purchase_order','recurring_invoice','location'])) {
+                    $entity = $parts[0] . substr($parts[1], -1);
+                    $prefix = ctrans("texts." . $parts[0]);
+                    $fallback = "custom_value" . substr($parts[1], -1);
+                    $custom_field_label = (string) $helper->makeCustomField($this->company->custom_fields, $entity);
 
                     if (strlen($custom_field_label) >= 1) {
                         $header[] = $custom_field_label;
                     } else {
-                        $header[] = $prefix . " ". ctrans("texts.{$fallback}");
+                        $header[] = $prefix . " " . ctrans("texts.{$fallback}");
                     }
 
                 } elseif (count($parts) == 2 && (stripos($parts[0], 'vendor_contact') !== false || stripos($parts[0], 'contact') !== false)) {
                     $parts[0] = str_replace('vendor_contact', 'contact', $parts[0]);
 
-                    $entity = "contact".substr($parts[1], -1);
+                    $entity = "contact" . substr($parts[1], -1);
                     $custom_field_string = strlen($helper->makeCustomField($this->company->custom_fields, $entity)) > 1 ? $helper->makeCustomField($this->company->custom_fields, $entity) : ctrans("texts.{$parts[1]}");
                     $header[] = ctrans("texts.{$parts[0]}") . " " . $custom_field_string;
 
                 } elseif (count($parts) == 2 && in_array(substr($original_key, 0, -1), ['credit','quote','invoice','purchase_order','recurring_invoice','task'])) {
-                    $custom_field_string = strlen($helper->makeCustomField($this->company->custom_fields, "product".substr($original_key, -1))) > 1 ? $helper->makeCustomField($this->company->custom_fields, "product".substr($original_key, -1)) : ctrans("texts.{$parts[1]}");
+                    $custom_field_string = strlen($helper->makeCustomField($this->company->custom_fields, "product" . substr($original_key, -1))) > 1 ? $helper->makeCustomField($this->company->custom_fields, "product" . substr($original_key, -1)) : ctrans("texts.{$parts[1]}");
                     $header[] = ctrans("texts.{$parts[0]}") . " " . $custom_field_string;
                 } else {
                     $header[] = "{$prefix}" . ctrans("texts.{$key}");
                 }
 
+            } elseif (stripos($value, 'custom_surcharge') !== false) {
+                $custom_field_label = (string) $helper->makeCustomField($this->company->custom_fields, $key);
+
+                if (strlen($custom_field_label) >= 1) {
+                    $header[] = $custom_field_label;
+                } else {
+                    $header[] = "{$prefix}" . ctrans("texts.{$key}");
+                }
             } else {
                 $header[] = "{$prefix}" . ctrans("texts.{$key}");
             }
@@ -1604,9 +1655,9 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
             $clean_row[$key]['entity'] = $report_keys[0];
             $clean_row[$key]['id'] = $report_keys[1] ?? $report_keys[0];
             $clean_row[$key]['hashed_id'] = $report_keys[0] == $entity ? null : $resource->{$report_keys[0]}->hashed_id ?? null;
-            $clean_row[$key]['value'] = isset($row[$column_key]) ? $row[$column_key] : $row[$value];
+            $clean_row[$key]['value'] = $row[$column_key] ?? $row[$value];
             $clean_row[$key]['identifier'] = $value;
-            $clean_row[$key]['display_value'] = isset($row[$column_key]) ? $row[$column_key] : $row[$value];
+            $clean_row[$key]['display_value'] = $row[$column_key] ?? $row[$value];
 
         }
 
@@ -1690,6 +1741,11 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
 
     public function convertFloats(iterable $entity): iterable
     {
+        if ($this->skip_float_conversion) {
+            $this->raw_rows[] = (array) $entity;
+            return $entity;
+        }
+
         $currency = $this->company->currency();
 
         foreach ($entity as $key => $value) {
@@ -1707,5 +1763,294 @@ $products = str_getcsv($this->input['product_key'], ',', "'");
 
         return $entity;
 
+    }
+
+    public function filterByUserPermissions(Builder $query): Builder
+    {
+
+        if (! ($this->input['user_id'] ?? false)) {
+            return $query;
+        }
+
+        $user = User::withTrashed()->where('id', $this->input['user_id'])->where('account_id', $this->company->account_id)->first();
+
+        if (! $user) {
+            return $query;
+        }
+
+        if ($user->isAdmin() || $user->hasExactPermission('view_all') || $user->hasExactPermission('edit_all')) { // No State? Do we need to ensure -> isAdmin() binds to the correct company?
+            return $query;
+        }
+
+        if ($user->hasExactPermission('create_all')) {
+            return $query->where('user_id', $user->id);
+        }
+
+        return $this->resolveEntityFilters($user, $query);
+
+    }
+
+    public function exportTemplate(Builder $query, string $template_id)
+    {
+        $template = Design::withTrashed()->find($this->decodePrimaryKey($template_id));
+
+        $model_string = $this->getModelString($query);
+
+        $data = [
+            "{$model_string}s" => $query->get(),
+            // "start_date" => $this->start_date,
+            // "end_date" => $this->end_date,
+        ];
+
+        $ts = new TemplateService($template);
+        $ts->setCompany($this->company);
+        $ts->addGlobal(['currency_code' => $this->company->currency()->code]);
+        $ts->twig->addGlobal('start_date', $this->start_date);
+        $ts->twig->addGlobal('end_date', $this->end_date);
+        $ts->build($data);
+
+        return $ts->getPdf();
+
+    }
+
+    private function getModelString(Builder $query): ?string
+    {
+
+        $model = get_class($query->getModel());
+
+        return match ($model) {
+            'App\Models\Client' => 'client',
+            'App\Models\ClientContact' => 'client',
+            'App\Models\Invoice' => 'invoice',
+            'App\Models\Quote' => 'quote',
+            'App\Models\Credit' => 'credit',
+            'App\Models\PurchaseOrder' => 'purchase_order',
+            'App\Models\RecurringInvoice' => 'recurring_invoice',
+            'App\Models\RecurringExpense' => 'recurring_expense',
+            'App\Models\Task' => 'task',
+            'App\Models\Vendor' => 'vendor',
+            'App\Models\VendorContact' => 'vendor_contact',
+            'App\Models\Product' => 'product',
+            'App\Models\Payment' => 'payment',
+            'App\Models\Expense' => 'expense',
+            'App\Models\Document' => 'document',
+            'App\Models\Activity' => 'activity',
+            'App\Models\Task' => 'task',
+            'App\Models\Project' => 'project',
+            default => null,
+        };
+    }
+    public function isGroupByActive(): bool
+    {
+        return ! empty($this->input['group_by']);
+    }
+
+    /**
+     * Run the export with grouping applied.
+     * Executes the normal run() to collect raw rows via convertFloats(),
+     * then groups and aggregates the collected data.
+     */
+    public function groupedRun(): string
+    {
+        $this->skip_float_conversion = true;
+        $this->raw_rows = [];
+
+        $this->run();
+
+        $this->skip_float_conversion = false;
+
+        $summary = $this->groupRows($this->raw_rows);
+
+        $csv = Writer::fromString();
+        \League\Csv\CharsetConverter::addTo($csv, 'UTF-8', 'UTF-8');
+
+        $header = $this->buildHeader();
+        $header[] = ctrans('texts.count');
+        $csv->insertOne($header);
+
+        foreach ($summary as $row) {
+            $csv->insertOne(array_values($this->convertFloats($row)));
+        }
+
+        return $csv->toString();
+    }
+
+    /**
+     * Return JSON with grouping applied.
+     * Executes the normal run() to collect raw rows,
+     * then groups and returns aggregated summary.
+     */
+    public function groupedReturnJson(): array
+    {
+        $this->skip_float_conversion = true;
+        $this->raw_rows = [];
+
+        $this->run();
+
+        $this->skip_float_conversion = false;
+
+        $summary = $this->groupRows($this->raw_rows);
+
+        $headerdisplay = $this->buildHeader();
+
+        $header = collect($this->input['report_keys'])->map(function ($key, $value) use ($headerdisplay) {
+            return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
+        })->toArray();
+
+        $header[] = ['identifier' => 'group.count', 'display_value' => ctrans('texts.count')];
+
+        $report = [];
+
+        foreach ($summary as $row) {
+            $formatted = (array) $this->convertFloats($row);
+            $clean_row = [];
+            $i = 0;
+
+            foreach (array_values($this->input['report_keys']) as $key) {
+                $parts = explode('.', $key);
+                $clean_row[$i] = [
+                    'entity' => $parts[0],
+                    'id' => $parts[1] ?? $parts[0],
+                    'hashed_id' => null,
+                    'value' => $formatted[$key] ?? '',
+                    'identifier' => $key,
+                    'display_value' => $formatted[$key] ?? '',
+                ];
+                $i++;
+            }
+
+            $clean_row[$i] = [
+                'entity' => 'group',
+                'id' => 'count',
+                'hashed_id' => null,
+                'value' => $row['group.count'],
+                'identifier' => 'group.count',
+                'display_value' => (string) $row['group.count'],
+            ];
+
+            $report[] = $clean_row;
+        }
+
+        return array_merge(['columns' => $header], $report);
+    }
+
+    /**
+     * Group rows by the group_by key and aggregate numeric columns.
+     *
+     * @param array<int, array<string, mixed>> $rows Raw (unformatted) rows
+     * @return array<int, array<string, mixed>> Aggregated summary rows
+     */
+    protected function groupRows(array $rows): array
+    {
+        if (empty($rows)) {
+            return [];
+        }
+
+        $group_by = $this->input['group_by'];
+        $grouped = [];
+
+        foreach ($rows as $row) {
+            $key = (string) ($row[$group_by] ?? '');
+            $grouped[$key][] = $row;
+        }
+
+        $numeric_columns = $this->detectNumericColumns($rows);
+
+        $summary = [];
+
+        foreach ($grouped as $group_value => $group_rows) {
+            $summary_row = [];
+
+            foreach (array_keys($rows[0]) as $column) {
+                if ($column === $group_by) {
+                    $summary_row[$column] = $group_value;
+                } elseif (isset($numeric_columns[$column]) && $numeric_columns[$column] && ! $this->isNonSummable($column)) {
+                    $summary_row[$column] = array_sum(array_column($group_rows, $column));
+                } else {
+                    $summary_row[$column] = '';
+                }
+            }
+
+            $summary_row['group.count'] = count($group_rows);
+            $summary[] = $summary_row;
+        }
+
+        return $summary;
+    }
+
+    /**
+     * Detect which columns contain numeric values.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, bool>
+     */
+    protected function detectNumericColumns(array $rows): array
+    {
+        $numeric = [];
+
+        foreach (array_keys($rows[0]) as $column) {
+            foreach ($rows as $row) {
+                $value = $row[$column] ?? '';
+
+                if (empty($value)) {
+                    continue;
+                }
+
+                $numeric[$column] = is_numeric($value);
+                break;
+            }
+        }
+
+        return $numeric;
+    }
+
+    /**
+     * Check if a column key matches a non-summable pattern.
+     */
+    protected function isNonSummable(string $key): bool
+    {
+        foreach ($this->non_summable_patterns as $pattern) {
+            if (str_contains($key, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveEntityFilters(User $user, Builder $query): Builder
+    {
+
+        $model = get_class($query->getModel());
+        $model_string = $this->getModelString($query);
+        $column_listing = \Illuminate\Support\Facades\Schema::getColumnListing($query->getModel()->getTable());
+
+        /** If the User can view or edit the entity, then return the query unfiltered */
+        if ($user->hasIntersectPermissions(["view_{$model_string}", "edit_{$model_string}"])) {
+            return $query;
+        }
+
+        //Handle Child Models Like ClientContact or VendorContact
+        if (in_array($model, ['App\Models\ClientContact', 'App\Models\VendorContact'])) {
+
+            $query->whereHas($model_string, function ($_q) use ($user) {
+                $_q->where('user_id', $user->id)->orWhere('assigned_user_id', $user->id);
+            });
+
+            return $query;
+
+        }
+
+        return $query->where(function ($q) use ($user, $column_listing) {
+
+            if (in_array('user_id', $column_listing)) {
+                $q->where('user_id', $user->id);
+            }
+
+            if (in_array('assigned_user_id', $column_listing)) {
+                $q->orWhere('assigned_user_id', $user->id);
+            }
+
+        });
     }
 }

@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateRecurringInvoicesIndex implements MigrationInterface
 {
@@ -13,10 +14,14 @@ final class CreateRecurringInvoicesIndex implements MigrationInterface
      */
     public function up(): void
     {
-        // Force drop any existing indices to avoid mapping conflicts
-        Index::dropIfExists('recurring_invoices_v2');
-        Index::dropIfExists('recurring_invoices');
-        
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+              
+        $indexExistsResponse = $client->indices()->exists(['index' => 'recurring_invoices']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
         $mapping = [
             'properties' => [
                 // Core recurring invoice fields
@@ -80,7 +85,7 @@ final class CreateRecurringInvoicesIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('recurring_invoices_v2', $mapping);
+        Index::createRaw('recurring_invoices', $mapping);
     }
 
     /**
@@ -88,6 +93,6 @@ final class CreateRecurringInvoicesIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('recurring_invoices_v2');
+        Index::dropIfExists('recurring_invoices');
     }
 }

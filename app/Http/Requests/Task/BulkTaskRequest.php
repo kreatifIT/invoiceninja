@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,6 +13,7 @@
 namespace App\Http\Requests\Task;
 
 use App\Http\Requests\Request;
+use Illuminate\Validation\Rule;
 
 class BulkTaskRequest extends Request
 {
@@ -34,12 +35,17 @@ class BulkTaskRequest extends Request
     public function rules()
     {
 
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
         return [
-            'action' => 'required|string',
-            'ids' => 'required|array',
+            'action' => 'required|string|in:archive,restore,delete,bulk_update,template,start,stop',
             'template' => 'sometimes|string',
             'template_id' => 'sometimes|string',
-            'send_email' => 'sometimes|bool'
+            'send_email' => 'sometimes|bool',
+            'ids' => ['required','bail','array'],
+            'column' => ['required_if:action,bulk_update', 'string', Rule::in(\App\Models\Task::$bulk_update_columns)],
+            'new_value' => ['required_if:action,bulk_update|string'],
         ];
 
     }

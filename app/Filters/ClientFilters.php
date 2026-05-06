@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,7 +31,7 @@ class ClientFilters extends QueryFilters
             return $this->builder;
         }
 
-        return $this->builder->where('name', 'like', '%'.$name.'%');
+        return $this->builder->where('name', 'like', '%' . $name . '%');
     }
 
     /**
@@ -135,19 +135,19 @@ class ClientFilters extends QueryFilters
         return $this->builder->where(function ($query) use ($searchTerms) {
             foreach ($searchTerms as $term) {
                 $query->where(function ($subQuery) use ($term) {
-                    $subQuery->where('name', 'like', '%'.$term.'%')
-                        ->orWhere('id_number', 'like', '%'.$term.'%')
-                        ->orWhere('number', 'like', '%'.$term.'%')
+                    $subQuery->where('name', 'like', '%' . $term . '%')
+                        ->orWhere('id_number', 'like', '%' . $term . '%')
+                        ->orWhere('number', 'like', '%' . $term . '%')
                         ->orWhereHas('contacts', function ($contactQuery) use ($term) {
-                            $contactQuery->where('first_name', 'like', '%'.$term.'%')
-                                ->orWhere('last_name', 'like', '%'.$term.'%')
-                                ->orWhere('email', 'like', '%'.$term.'%')
-                                ->orWhere('phone', 'like', '%'.$term.'%');
+                            $contactQuery->where('first_name', 'like', '%' . $term . '%')
+                                ->orWhere('last_name', 'like', '%' . $term . '%')
+                                ->orWhere('email', 'like', '%' . $term . '%')
+                                ->orWhere('phone', 'like', '%' . $term . '%');
                         })
-                        ->orWhere('custom_value1', 'like', '%'.$term.'%')
-                        ->orWhere('custom_value2', 'like', '%'.$term.'%')
-                        ->orWhere('custom_value3', 'like', '%'.$term.'%')
-                        ->orWhere('custom_value4', 'like', '%'.$term.'%');
+                        ->orWhere('custom_value1', 'like', '%' . $term . '%')
+                        ->orWhere('custom_value2', 'like', '%' . $term . '%')
+                        ->orWhere('custom_value3', 'like', '%' . $term . '%')
+                        ->orWhere('custom_value4', 'like', '%' . $term . '%');
                 });
             }
         });
@@ -173,7 +173,8 @@ class ClientFilters extends QueryFilters
             $sort_col[0] = 'name';
         }
 
-        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
+        if (is_array($sort_col) && in_array($sort_col[0], ['contacts', 'contact_email'])) {
+        } elseif (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 
@@ -184,18 +185,62 @@ class ClientFilters extends QueryFilters
         }
 
         if ($sort_col[0] == 'name') {
-            return $this->builder
-                ->select('clients.*')
-                ->selectSub(function ($query) {
-                    $query->from('client_contacts')
-                        ->whereColumn('client_contacts.client_id', 'clients.id')
-                        ->whereNull('client_contacts.deleted_at')
-                        ->select(\DB::raw('COALESCE(NULLIF(first_name, ""), email) as contact_info'))
-                        ->limit(1);
-                }, 'first_contact_name')
-                ->orderByRaw("COALESCE(NULLIF(clients.name, ''), first_contact_name) " . $dir);
+            // Use a raw subquery in the ORDER BY instead of adding it to SELECT
+            // This avoids conflicts with the Excludable trait
+
+            return $this->builder->orderByRaw(
+                "
+                COALESCE(
+                    NULLIF(clients.name, ''), 
+                    (
+                        SELECT COALESCE(NULLIF(first_name, ''), email) 
+                        FROM client_contacts 
+                        WHERE client_contacts.client_id = clients.id 
+                        AND client_contacts.deleted_at IS NULL 
+                        LIMIT 1
+                    )
+                ) " . $dir
+            );
         }
 
+
+        if($sort_col[0] == 'contact_email') {
+            return $this->builder->orderBy(\App\Models\ClientContact::select('email')
+            ->whereColumn('client_contacts.client_id', 'clients.id')
+            ->limit(1), $dir);
+        }
+
+        if ($sort_col[0] == 'contacts') {
+            return $this->builder->orderByRaw(
+                "
+                (
+                    SELECT 
+                        CASE 
+                            WHEN first_name IS NOT NULL AND first_name != '' AND last_name IS NOT NULL AND last_name != '' 
+                            THEN CONCAT(first_name, ' ', last_name)
+                            WHEN first_name IS NOT NULL AND first_name != '' 
+                            THEN first_name
+                            WHEN last_name IS NOT NULL AND last_name != '' 
+                            THEN last_name
+                            ELSE email
+                        END
+                    FROM client_contacts 
+                    WHERE client_contacts.client_id = clients.id 
+                    AND client_contacts.deleted_at IS NULL
+                    ORDER BY
+                        CASE 
+                            WHEN first_name IS NOT NULL AND first_name != '' AND last_name IS NOT NULL AND last_name != '' THEN 1
+                            WHEN first_name IS NOT NULL AND first_name != '' THEN 2
+                            WHEN last_name IS NOT NULL AND last_name != '' THEN 3
+                            ELSE 4
+                        END,
+                        first_name ASC,
+                        last_name ASC,
+                        email ASC
+                    LIMIT 1
+                ) " . $dir
+            );
+        }
         return $this->builder->orderBy($sort_col[0], $dir);
     }
 

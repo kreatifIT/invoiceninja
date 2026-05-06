@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,8 +31,8 @@ class UpdateEntityRequest extends FormRequest
             return true;
         }
 
-        return $user->account->isPaid() && $user->isAdmin() &&
-            $user->company()->legal_entity_id != null;
+        return $user->account->isPaid() && $user->isAdmin()
+           && $user->company()->legal_entity_id != null;
     }
 
     /**
@@ -53,14 +53,4 @@ class UpdateEntityRequest extends FormRequest
         $this->replace($input);
     }
 
-    // public function after(): array
-    // {
-    //     return [
-    //         function (Validator $validator) {
-    //             if ($this->input('acts_as_sender') === false && $this->input('acts_as_receiver') === false) {
-    //                 $validator->errors()->add('acts_as_receiver', ctrans('texts.acts_as_must_be_true'));
-    //             }
-    //         }
-    //     ];
-    // }
 }

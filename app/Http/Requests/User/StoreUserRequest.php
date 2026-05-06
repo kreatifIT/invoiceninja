@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -101,7 +101,6 @@ class StoreUserRequest extends Request
         $this->replace($input);
     }
 
-    //@todo make sure the user links back to the account ID for this company!!!!!!
     public function fetchUser(): User
     {
         $user = MultiDB::hasUser(['email' => $this->input('email')]);

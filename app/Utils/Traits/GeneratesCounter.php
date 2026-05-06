@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -39,6 +39,13 @@ trait GeneratesCounter
 
     //todo in the form validation, we need to ensure that if a prefix and pattern is set we throw a validation error,
     //only one type is allow else this will cause confusion to the end user
+
+    public function getPeppolCreditNumber(Client $client, Invoice $invoice)
+    {
+        $entity_number = $this->getNextEntityNumber(Credit::class, $client);
+
+        return $this->replaceUserVars($invoice, $entity_number);
+    }
 
     private function getNextEntityNumber($entity, Client $client, $is_recurring = false)
     {
@@ -76,7 +83,7 @@ trait GeneratesCounter
         $pattern = $this->getNumberPattern($entity, $client);
 
         if (strlen($pattern) > 1 && (stripos($pattern, 'counter') === false)) {
-            $pattern = $pattern.'{$counter}';
+            $pattern = $pattern . '{$counter}';
         }
 
         $padding = $client->getSetting('counter_padding');
@@ -332,7 +339,7 @@ trait GeneratesCounter
         $pattern = $expense->company->settings->expense_number_pattern;
 
         if (strlen($pattern) > 1 && (stripos($pattern, 'counter') === false)) {
-            $pattern = $pattern.'{$counter}';
+            $pattern = $pattern . '{$counter}';
         }
 
         $expense_number = $this->checkEntityNumber(Expense::class, $expense, $counter, $expense->company->settings->counter_padding, $pattern);
@@ -436,7 +443,7 @@ trait GeneratesCounter
             if ($check_counter > 100) {
                 $this->update_counter = $counter--;
 
-                return $number.'_'.Str::random(5);
+                return $number . '_' . Str::random(5);
             }
         } while ($check);
 
@@ -507,7 +514,7 @@ trait GeneratesCounter
             return $counter;
         }
 
-        return  $prefix.$counter;
+        return  $prefix . $counter;
     }
 
     /**

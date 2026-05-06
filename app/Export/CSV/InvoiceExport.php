@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -59,7 +59,7 @@ class InvoiceExport extends BaseExport
 
         $query = Invoice::query()
                         ->withTrashed()
-                        ->with('client')
+                        ->with('client', 'location')
                         ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         })
@@ -81,6 +81,9 @@ class InvoiceExport extends BaseExport
         if ($this->input['status'] ?? false) {
             $query = $this->addInvoiceStatusFilter($query, $this->input['status']);
         }
+
+        $query = $this->filterByUserPermissions($query);
+
 
         if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
@@ -120,7 +123,7 @@ class InvoiceExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         if ($tax_amount_position = array_search('invoice.total_taxes', $this->input['report_keys'])) {
@@ -166,7 +169,7 @@ class InvoiceExport extends BaseExport
 
 
             foreach ($this->tax_names as $tax_name) {
-                $labels[] = 'tax.'.$tax_name;
+                $labels[] = 'tax.' . $tax_name;
             }
 
             $this->input['report_keys'] = array_merge($first_part, $labels, $second_part);
@@ -185,7 +188,7 @@ class InvoiceExport extends BaseExport
         return $this->csv->toString();
     }
 
-    private function buildRow(Invoice $invoice): array
+    protected function buildRow(Invoice $invoice): array
     {
         $transformed_invoice = $this->invoice_transformer->transform($invoice);
 
@@ -205,7 +208,7 @@ class InvoiceExport extends BaseExport
 
         }
 
-        
+
         if (count($this->tax_names) > 0) {
 
             $calc = $invoice->calc();
@@ -246,7 +249,10 @@ class InvoiceExport extends BaseExport
 
         if (in_array('invoice.user_id', $this->input['report_keys'])) {
             $entity['invoice.user_id'] = $invoice->user ? $invoice->user->present()->name() : ''; // @phpstan-ignore-line
+        }
 
+        if (in_array('invoice.subtotal', $this->input['report_keys'])) {
+            $entity['invoice.subtotal'] = $invoice->calc()->getSubTotal();
         }
 
         return $entity;

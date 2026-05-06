@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,11 +36,13 @@ class ZugferdEDocument extends AbstractService
 
     private Client $client;
 
-    private InvoiceSum | InvoiceSumInclusive $calc;
+    private InvoiceSum|InvoiceSumInclusive $calc;
 
     private ?string $tax_code = null;
 
     private ?string $exemption_reason_code = null;
+
+    private ?string $temp_file_path = null;
 
     /**
      * __construct
@@ -50,9 +52,7 @@ class ZugferdEDocument extends AbstractService
      * @param  array $tax_map
      * @return void
      */
-    public function __construct(public \App\Models\Invoice | \App\Models\Quote | \App\Models\PurchaseOrder | \App\Models\Credit $document, private readonly bool $returnObject = false, private array $tax_map = [])
-    {
-    }
+    public function __construct(public \App\Models\Invoice|\App\Models\Quote|\App\Models\PurchaseOrder|\App\Models\Credit $document, private readonly bool $returnObject = false, private array $tax_map = []) {}
 
     public function run(): self
     {
@@ -84,6 +84,7 @@ class ZugferdEDocument extends AbstractService
             ->setDocumentInformation()
             ->setPoNumber()
             ->setRoutingNumber()
+            ->setIdNumber()
             ->setDeliveryAddress()
             ->setDocumentTaxes()        // 1. First set taxes
             ->setPaymentMeans()         // 2. Then payment means
@@ -91,6 +92,7 @@ class ZugferdEDocument extends AbstractService
             ->setLineItems()            // 4. Then line items
             ->setCustomSurcharges()     // 4a. Surcharges
             ->setDocumentSummation();   // 5. Finally document summation
+        // ->setAdditionalReferencedDocument();   // 6. Additional referenced document
 
         return $this;
 
@@ -104,26 +106,57 @@ class ZugferdEDocument extends AbstractService
 
         if ($this->document->custom_surcharge1 > 0) {
             $surcharge = $this->document->uses_inclusive_taxes ? ($this->document->custom_surcharge1 / (1 + ($item["tax_rate"] / 100))) : $this->document->custom_surcharge1;
-            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"],null,null,null,null,null,null, ctrans('texts.surcharge'));
+            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"], null, null, null, null, null, null, ctrans('texts.surcharge'));
         }
 
         if ($this->document->custom_surcharge2 > 0) {
             $surcharge = $this->document->uses_inclusive_taxes ? ($this->document->custom_surcharge2 / (1 + ($item["tax_rate"] / 100))) : $this->document->custom_surcharge2;
-            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"],null,null,null,null,null,null, ctrans('texts.surcharge'));
+            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"], null, null, null, null, null, null, ctrans('texts.surcharge'));
         }
 
         if ($this->document->custom_surcharge3 > 0) {
             $surcharge = $this->document->uses_inclusive_taxes ? ($this->document->custom_surcharge3 / (1 + ($item["tax_rate"] / 100))) : $this->document->custom_surcharge3;
-            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"],null,null,null,null,null,null, ctrans('texts.surcharge'));
+            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"], null, null, null, null, null, null, ctrans('texts.surcharge'));
         }
 
         if ($this->document->custom_surcharge4 > 0) {
             $surcharge = $this->document->uses_inclusive_taxes ? ($this->document->custom_surcharge4 / (1 + ($item["tax_rate"] / 100))) : $this->document->custom_surcharge4;
-            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"],null,null,null,null,null,null, ctrans('texts.surcharge'));
+            $this->xdocument->addDocumentAllowanceCharge($surcharge, true, $tax_code, "VAT", $item["tax_rate"], null, null, null, null, null, null, ctrans('texts.surcharge'));
         }
 
         return $this;
     }
+
+    /**
+     * setAdditionalReferencedDocument
+     *
+     * circular reference causing the file to never be created.
+     * PDF => xml => PDF => xml
+     *
+     * Need to abstract the insertion of the base64 document into the XML.
+     *
+     * @return self
+     */
+    // private function setAdditionalReferencedDocument(): self
+    // {
+    //     if($this->document->client->getSetting('merge_e_invoice_to_pdf')) {
+    //         return $this;
+    //     }
+
+    //     $invitation = $this->document->invitations()->first();
+    //     $pdf = (new \App\Jobs\Entity\CreateRawPdf($invitation))->handle();
+    //     $file_name = $this->document->numberFormatter().'.pdf';
+
+    //     $this->temp_file_path = \App\Utils\TempFile::filePath($pdf, $file_name);
+
+    //     $this->xdocument->addDocumentInvoiceSupportingDocumentWithFile(
+    //         $this->document->number,
+    //         $this->temp_file_path,
+    //         $file_name,
+    //     );
+
+    //     return $this;
+    // }
 
     /**
      * setDocumentTaxes
@@ -147,14 +180,19 @@ class ZugferdEDocument extends AbstractService
      */
     private function setDocumentTaxes(): self
     {
-        
+
         if ((string) $this->document->total_taxes == '0') {
 
             $base_amount = 0;
             $tax_amount = 0;
             $tax_rate = 0;
 
-            if (in_array($this->tax_code,[ZugferdDutyTaxFeeCategories::VAT_REVERSE_CHARGE, ZugferdDutyTaxFeeCategories::EXEMPT_FROM_TAX])) { //reverse charge
+            if (in_array($this->tax_code, [
+                ZugferdDutyTaxFeeCategories::VAT_REVERSE_CHARGE,
+                ZugferdDutyTaxFeeCategories::EXEMPT_FROM_TAX,
+                ZugferdDutyTaxFeeCategories::FREE_EXPORT_ITEM_TAX_NOT_CHARGED,
+                ZugferdDutyTaxFeeCategories::VAT_EXEMPT_FOR_EEA_INTRACOMMUNITY_SUPPLY_OF_GOODS_AND_SERVICES,
+            ])) {
                 $base_amount = $this->document->amount;
             }
 
@@ -177,7 +215,13 @@ class ZugferdEDocument extends AbstractService
                     $this->tax_code,
                     "VAT",
                     0,
-                    null,null,null,null,null,null, ctrans('texts.discount')
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ctrans('texts.discount')
                 );
             }
 
@@ -193,19 +237,33 @@ class ZugferdEDocument extends AbstractService
         //taxable amount and net subtotal should be the same
         $adjustment = round($taxable_amount - $net_subtotal, 2);
 
+        /** Iterate and ensure all taxes are grouped so that we do not have duplicates */
+        $tax_map = $this->calc->getTaxMap()
+                        ->groupBy('tax_rate')
+                        ->map(function ($group) {
+                            return [
+                                'tax_id'      => $group->first()['tax_id'],
+                                'tax_rate'    => $group->first()['tax_rate'],
+                                'base_amount' => $group->sum('base_amount'),
+                                'total'       => $group->sum('total'),
+                            ];
+                        })
+                        ->values();
+
         // Process each tax rate group
         foreach ($tax_map as $item) {
             $tax_type = $this->getTaxType($item["tax_id"]);
             // Add tax information
+            $isIntraCommunity = $tax_type == ZugferdDutyTaxFeeCategories::VAT_EXEMPT_FOR_EEA_INTRACOMMUNITY_SUPPLY_OF_GOODS_AND_SERVICES;
+
             $this->xdocument->addDocumentTax(
                 $tax_type,
                 "VAT",
                 $item["base_amount"] + $adjustment, // Taxable amount after discount
                 $item["total"],
                 $item["tax_rate"],
-                $tax_type == ZugferdDutyTaxFeeCategories::VAT_EXEMPT_FOR_EEA_INTRACOMMUNITY_SUPPLY_OF_GOODS_AND_SERVICES
-                    ? ctrans('texts.intracommunity_tax_info')
-                    : ''
+                $isIntraCommunity ? ctrans('texts.intracommunity_tax_info') : null,
+                $isIntraCommunity ? "VATEX-EU-IC" : null
             );
 
             if ($this->calc->getTotalDiscount() > 0) {
@@ -218,7 +276,13 @@ class ZugferdEDocument extends AbstractService
                     $this->getTaxType($item["tax_id"] ?? '2'),
                     "VAT",
                     $item["tax_rate"],
-                    null,null,null,null,null,null,ctrans('texts.discount')
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ctrans('texts.discount')
                 );
             }
 
@@ -235,7 +299,7 @@ class ZugferdEDocument extends AbstractService
                 'payeddue' => date_create($this->document->date ?? now()->format('Y-m-d'))
                     ->diff(date_create($this->document->due_date ?? now()->format('Y-m-d')))
                     ->format("%d"),
-                'paydate' => $this->document->due_date
+                'paydate' => $this->document->due_date,
             ])
         );
 
@@ -249,7 +313,14 @@ class ZugferdEDocument extends AbstractService
 
     public function getXml(): string
     {
-        return $this->xdocument->getContent();
+        $xml = $this->xdocument->getContent();
+
+        //used if we are embedding the document within the PDF
+        if ($this->temp_file_path) {
+            unlink($this->temp_file_path);
+        }
+
+        return $xml;
     }
 
     private function bootFlags(): self
@@ -269,7 +340,7 @@ class ZugferdEDocument extends AbstractService
 
         if (!in_array($this->document->client->country->iso_3166_2, $eu_states)) {
             $this->tax_code = ZugferdDutyTaxFeeCategories::FREE_EXPORT_ITEM_TAX_NOT_CHARGED;
-            $exemption_reason_code = "VATEX-EU-G";
+            $this->exemption_reason_code = "VATEX-EU-G";
         } elseif ($this->client->is_tax_exempt || $item->tax_id == '5' || $item->tax_id == '8') {
             $this->tax_code =  ZugferdDutyTaxFeeCategories::EXEMPT_FROM_TAX;
             // $this->exemption_reason_code = "VATEX-EU-NOT-TAX";
@@ -356,9 +427,10 @@ class ZugferdEDocument extends AbstractService
                     $item->tax_rate1
                 );
             } else {
-                // Add zero tax if no tax is specified
+                // Use the document-level tax category (set in bootFlags) so line items
+                // match the document tax breakdown — required by BR-E-01, BR-G-08, etc.
                 $this->xdocument->addDocumentPositionTax(
-                    ZugferdDutyTaxFeeCategories::EXEMPT_FROM_TAX,
+                    $this->tax_code ?? ZugferdDutyTaxFeeCategories::EXEMPT_FROM_TAX,
                     'VAT',
                     0
                 );
@@ -393,11 +465,15 @@ class ZugferdEDocument extends AbstractService
 
     private function setCompanyTaxRegistration(): array
     {
-        if (str_contains($this->company->getSetting('vat_number'), "/")) {
-            return ["FC", $this->company->getSetting('vat_number')];
+        $vat_number = $this->company->getSetting('vat_number');
+
+        if (str_contains($vat_number, "/")) {
+            return ["FC", $vat_number];
         }
 
-        return ["VA", $this->company->getSetting('vat_number')];
+        $vat_number = $this->addVatCountryPrefix($vat_number, $this->company->country()->iso_3166_2);
+
+        return ["VA", $vat_number];
     }
 
     private function setPaymentMeans(): self
@@ -443,7 +519,8 @@ class ZugferdEDocument extends AbstractService
     private function setDeliveryAddress(): self
     {
 
-        if (isset($this->client->shipping_address1) && $this->client->shipping_country) {
+        if (!empty($this->client->shipping_address1) && $this->client->shipping_country_id) {
+            $this->xdocument->setDocumentShipTo();
             $this->xdocument->setDocumentShipToAddress(
                 $this->client->shipping_address1,
                 $this->client->shipping_address2,
@@ -453,6 +530,10 @@ class ZugferdEDocument extends AbstractService
                 $this->client->shipping_country->iso_3166_2,
                 $this->client->shipping_state
             );
+        }
+
+        if (isset($this->document->e_invoice->Invoice->Delivery[0]->ActualDeliveryDate)) {
+            $this->xdocument->setDocumentSupplyChainEvent(new \DateTime($this->document->e_invoice->Invoice->Delivery[0]->ActualDeliveryDate));
         }
 
         return $this;
@@ -487,11 +568,15 @@ class ZugferdEDocument extends AbstractService
             ->setDocumentBuyer($this->client->present()->name(), $this->client->number)
             ->setDocumentBuyerAddress($this->client->address1, "", "", $this->client->postal_code, $this->client->city, $this->client->country->iso_3166_2, $this->client->state)
             ->setDocumentBuyerContact($this->client->present()->primary_contact_name(), "", $this->client->present()->phone(), "", $this->client->present()->email())
-            ->setDocumentBuyerCommunication("EM", $this->client->present()->email())
-            ->addDocumentPaymentTerm(ctrans("texts.xinvoice_payable", ['payeddue' => date_create($this->document->date ?? now()->format('Y-m-d'))->diff(date_create($this->document->due_date ?? now()->format('Y-m-d')))->format("%d"), 'paydate' => $this->document->due_date]));
+            ->setDocumentBuyerCommunication("EM", $this->client->present()->email());
+
+        if (!empty($this->document->public_notes)) {
+            $this->xdocument->addDocumentNote($this->document->public_notes);
+        }
 
         if (strlen($this->client->vat_number ?? '') > 1) {
-            $this->xdocument->addDocumentBuyerTaxRegistration($this->getDocumentLevelTaxRegistration(), $this->client->vat_number);
+            $buyer_vat = $this->addVatCountryPrefix($this->client->vat_number, $this->client->country->iso_3166_2);
+            $this->xdocument->addDocumentBuyerTaxRegistration($this->getDocumentLevelTaxRegistration(), $buyer_vat);
         }
 
         return $this;
@@ -512,6 +597,23 @@ class ZugferdEDocument extends AbstractService
     {
         if (isset($this->document->po_number) && strlen($this->document->po_number) > 1) {
             $this->xdocument->setDocumentBuyerOrderReferencedDocument($this->document->po_number);
+        }
+
+        return $this;
+    }
+
+    private function setIdNumber(): self
+    {
+        $id_number = $this->company->getSetting('id_number');
+
+        if (!empty($id_number) && str_contains($id_number, "/")) {
+            $id_number = trim($id_number);
+
+            // BT-29: Seller identifier
+            $this->xdocument->addDocumentSellerGlobalId($id_number, "0088");
+
+            // BT-32: Tax registration identifier
+            $this->xdocument->addDocumentSellerTaxRegistration("FC", $id_number);
         }
 
         return $this;
@@ -546,6 +648,37 @@ class ZugferdEDocument extends AbstractService
     private function getDocumentLevelTaxRegistration(): string
     {
         return strlen($this->client->vat_number ?? '') > 1 ? "VA" : "FC";
+    }
+
+
+    private function getIdNumber(): ?string
+    {
+        return !empty($this->company->getSetting('id_number'))
+            ? trim($this->company->getSetting('id_number'))
+            : null;
+    }
+
+    private function getIdNumberRegistrationType(): ?string
+    {
+        return !empty($this->getIdNumber()) && str_contains($this->getIdNumber(), "/")
+            ? "FC"
+            : null;
+    }
+
+    /**
+     * Ensures a VAT number has an ISO 3166-1 alpha-2 country prefix
+     * as required by BR-CO-09.
+     */
+    private function addVatCountryPrefix(string $vat_number, string $country_code): string
+    {
+        $vat_number = trim($vat_number);
+        $country_code = strtoupper(substr($country_code, 0, 2));
+
+        if (stripos($vat_number, $country_code) === 0) {
+            return $vat_number;
+        }
+
+        return $country_code . $vat_number;
     }
 
     private function getTaxType(string $tax_id): string

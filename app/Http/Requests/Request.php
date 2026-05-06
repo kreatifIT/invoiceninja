@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -35,7 +35,7 @@ class Request extends FormRequest
     public function fileValidation()
     {
         if (config('ninja.upload_extensions')) {
-            return $this->file_validation. ",".config('ninja.upload_extensions');
+            return $this->file_validation . "," . config('ninja.upload_extensions');
         }
 
         return $this->file_validation;
@@ -82,7 +82,7 @@ class Request extends FormRequest
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $rules['invoice_id'] = 'bail|nullable|sometimes|exists:invoices,id,company_id,'.$user->company()->id.',client_id,'.$this['client_id'];
+        $rules['invoice_id'] = 'bail|nullable|sometimes|exists:invoices,id,company_id,' . $user->company()->id . ',client_id,' . $this['client_id'];
 
         return $rules;
     }
@@ -92,7 +92,7 @@ class Request extends FormRequest
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $rules['vendor_id'] = 'bail|nullable|sometimes|exists:vendors,id,company_id,'.$user->company()->id;
+        $rules['vendor_id'] = 'bail|nullable|sometimes|exists:vendors,id,company_id,' . $user->company()->id;
 
         return $rules;
     }
@@ -213,33 +213,21 @@ class Request extends FormRequest
                 }
 
                 if (array_key_exists('email', $contact)) {
-                    $input['contacts'][$key]['email'] = trim($contact['email']);
+                    $input['contacts'][$key]['email'] = trim($contact['email'] ?? '');
                 }
             }
         }
 
-        if (isset($input['public_notes'])) {
-            $input['public_notes'] = str_replace("</sc", "<-", $input['public_notes']);
-        }
-
-        if (isset($input['footer'])) {
-            $input['footer'] = str_replace("</sc", "<-", $input['footer']);
-        }
-
-        if (isset($input['terms'])) {
-            $input['terms'] = str_replace("</sc", "<-", $input['terms']);
-        }
-
-        if (isset($input['private_notes'])) {
-            $input['private_notes'] = str_replace("</sc", "<-", $input['private_notes']);
+        foreach (['public_notes', 'footer', 'terms', 'private_notes'] as $field) {
+            if (isset($input[$field]) && is_string($input[$field])) {
+                $input[$field] = \App\Services\Pdf\Purify::clean($input[$field], true);
+            }
         }
 
         return $input;
     }
 
-    public function prepareForValidation()
-    {
-    }
+    public function prepareForValidation() {}
 
     /**
      * Convert to boolean
@@ -249,7 +237,7 @@ class Request extends FormRequest
      */
     public function toBoolean($bool): bool
     {
-        return filter_var($bool, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        return filter_var($bool, FILTER_VALIDATE_BOOLEAN);
     }
 
     public function checkTimeLog(array $log): bool
@@ -306,5 +294,7 @@ class Request extends FormRequest
 
             return true;
         }
+
+        return true;
     }
 }

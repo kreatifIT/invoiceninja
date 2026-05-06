@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -49,6 +49,7 @@ class UpdateClientRequest extends Request
         $rules['file'] = 'bail|sometimes|array';
         $rules['file.*'] = $this->fileValidation();
         $rules['documents'] = 'bail|sometimes|array';
+        $rules['documents.*'] = $this->fileValidation();
 
         $rules['company_logo'] = 'mimes:jpeg,jpg,png,gif|max:10000';
         $rules['industry_id'] = 'integer|nullable';
@@ -97,8 +98,23 @@ class UpdateClientRequest extends Request
             }
         }];
 
+        $rules['settings.currency_id'] = 'required|exists:currencies,id';
 
         return $rules;
+    }
+
+    public function withValidator($validator)
+    {
+        $validator->after(function ($validator) {
+
+            $user = auth()->user();
+            $company = $user->company();
+
+            if (isset($this->settings['lock_invoices']) && $company->verifactuEnabled() && $this->settings['lock_invoices'] != 'when_sent') {
+                $validator->errors()->add('settings.lock_invoices', 'Locked Invoices Cannot Be Disabled');
+            }
+
+        });
     }
 
     public function messages()
@@ -123,7 +139,7 @@ class UpdateClientRequest extends Request
         if ($this->file('file') instanceof \Illuminate\Http\UploadedFile) {
             $this->files->set('file', [$this->file('file')]);
         }
-        
+
         if (isset($input['documents'])) {
             unset($input['documents']);
         }
@@ -143,7 +159,7 @@ class UpdateClientRequest extends Request
         }
 
         if (array_key_exists('name', $input)) {
-            $input['name'] = strip_tags($input['name']);
+            $input['name'] = strip_tags($input['name'] ?? '');
         }
 
         // allow setting country_id by iso code
@@ -210,6 +226,9 @@ class UpdateClientRequest extends Request
     private function filterSaveableSettings($settings)
     {
         $account = $this->client->company->account;
+
+        // Do not allow a user to force pdf variables on the client settings.
+        unset($settings['pdf_variables']);
 
         if (! $account->isFreeHostedClient()) {
             return $settings;

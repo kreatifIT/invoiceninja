@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -33,21 +33,33 @@ class PreviewReport implements ShouldQueue
     /**
      * Create a new job instance
      */
-    public function __construct(protected Company $company, protected array $request, private string $report_class, protected string $hash)
-    {
-    }
+    public function __construct(protected Company $company, protected array $request, private string $report_class, protected string $hash) {}
 
     public function handle()
     {
         MultiDB::setDb($this->company->db);
 
-        /** @var \App\Export\CSV\CreditExport $export */
+        /** @var \App\Services\Report\ProfitLoss|\App\Export\CSV\BaseExport $export */
         $export = new $this->report_class($this->company, $this->request);
 
-        if (isset($this->request['output']) && $this->request['output'] == 'json') {
-            $report = $export->returnJson();
+        if ($export instanceof \App\Export\CSV\BaseExport) {
+            if ($export->isGroupByActive()) {
+                if (isset($this->request['output']) && $this->request['output'] == 'json') {
+                    $report = $export->groupedReturnJson();
+                } else {
+                    $report = base64_encode($export->groupedRun());
+                }
+            } elseif (isset($this->request['output']) && $this->request['output'] == 'json') {
+                $report = $export->returnJson();
+            } elseif (!empty($this->request['template_id'])) {
+                $builder = $export->init();
+                $report = $export->exportTemplate($builder, $this->request['template_id']);
+                $report = base64_encode($report);
+            } else {
+                $report = base64_encode($export->run());
+            }
         } else {
-            $report = $export->run();
+            $report = base64_encode($export->run());
         }
 
         Cache::put($this->hash, $report, 60 * 60);
@@ -56,9 +68,9 @@ class PreviewReport implements ShouldQueue
     /**
      * Handle a job failure.
      */
-    public function failed(\Throwable $exception = null)
+    public function failed(?\Throwable $exception)
     {
-        if($exception) {
+        if ($exception) {
             nlog("EXCEPTION:: PreviewReport:: could not preview report for " . $exception->getMessage());
         }
     }

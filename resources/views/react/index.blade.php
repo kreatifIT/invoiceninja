@@ -1,31 +1,36 @@
 <!DOCTYPE html>
-<html data-report-errors="{{ $report_errors }}" data-rc="{{ $rc }}" data-user-agent="{{ $user_agent }}" data-login="{{ $login }}">
-<head>
-    <!-- Source: https://github.com/invoiceninja/invoiceninja -->
-    <!-- Version: {{ config('ninja.app_version') }} -->
-  <meta charset="UTF-8">
-  <title>{{ config('ninja.app_name') }}</title>
-  <meta name="google-signin-client_id" content="{{ config('services.google.client_id') }}">
+<html lang="en" class="h-full">
+  <head>
+    <title>Invoice Ninja</title>
 
-  @include('react.head')
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Leading free invoice generator for freelancers and small businesses. Invoice clients, accept payments, track expenses &amp; time billable-tasks online."
+    />
 
-</head>
+    <script>
+      if (
+        window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+      ) {
+        document.documentElement.style.backgroundColor = '#18181b';
+      }
+    </script>
 
-<body class="h-full">
-  <noscript>You need to enable JavaScript to run this app.</noscript>
-  <div id="root"></div>
-  
-</body>
+    <link rel="stylesheet" href="/rsms/inter.css" />
 
-<!--
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/logo180.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <script type="module" crossorigin src="/bundle.CKi4DlSR.js"></script>
+    <link rel="stylesheet" crossorigin href="/index-CH3c91u5.css">
+  </head>
 
-If you are reading this, there is a fair change that the react application has not loaded for you. There are a couple of solutions:
-
-1. Download the release file from https://github.com/invoiceninja/invoiceninja and overwrite your current installation.
-2. Switch back to the Flutter application by editing the database, you can do this with the following SQL
-
-UPDATE accounts SET
-set_react_as_default_ap = 0;
-
--->
+  <body class="h-full">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
 </html>

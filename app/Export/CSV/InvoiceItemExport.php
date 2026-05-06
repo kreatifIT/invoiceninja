@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -42,7 +42,7 @@ class InvoiceItemExport extends BaseExport
     private array $decorate_keys = [
         'client',
         'currency_id',
-        'status'
+        'status',
     ];
 
     public function __construct(Company $company, array $input)
@@ -71,7 +71,7 @@ class InvoiceItemExport extends BaseExport
 
         $query = Invoice::query()
                         ->withTrashed()
-                        ->with('client')
+                        ->with('client', 'location')
                         ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         })
@@ -92,6 +92,8 @@ class InvoiceItemExport extends BaseExport
         if ($this->input['status'] ?? false) {
             $query = $this->addInvoiceStatusFilter($query, $this->input['status']);
         }
+
+        $query = $this->filterByUserPermissions($query);
 
         $query = $this->applyProductFilters($query);
 
@@ -137,7 +139,7 @@ class InvoiceItemExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
@@ -157,13 +159,13 @@ class InvoiceItemExport extends BaseExport
 
     private function filterItems(array $items): array
     {
-        
+
         //if we have product filters in place, we will also need to filter the items at this level:
         if (isset($this->input['product_key'])) {
-            
+
             $products = str_getcsv($this->input['product_key'], ',', "'");
 
-            $products = array_map(function($product) {
+            $products = array_map(function ($product) {
                 return trim($product, "'");
             }, $products);
 
@@ -192,16 +194,14 @@ class InvoiceItemExport extends BaseExport
 
                     if ($tmp_key == 'tax_id') {
 
-                        if(!property_exists($item, 'tax_id')) {
+                        if (!property_exists($item, 'tax_id')) {
                             $item->tax_id = '1';
                         }
 
-                        $item_array[$key] = $this->getTaxCategoryName((int)$item->tax_id ?? 1); // @phpstan-ignore-line
-                    }
-                    elseif (property_exists($item, $tmp_key)) {
+                        $item_array[$key] = $this->getTaxCategoryName((int) $item->tax_id ?? 1); // @phpstan-ignore-line
+                    } elseif (property_exists($item, $tmp_key)) {
                         $item_array[$key] = $item->{$tmp_key};
-                    } 
-                    else {
+                    } else {
                         $item_array[$key] = '';
                     }
                 }
@@ -233,7 +233,7 @@ class InvoiceItemExport extends BaseExport
         };
     }
 
-    private function buildRow(Invoice $invoice): array
+    protected function buildRow(Invoice $invoice): array
     {
         $transformed_invoice = $this->invoice_transformer->transform($invoice);
 
@@ -279,6 +279,11 @@ class InvoiceItemExport extends BaseExport
         if (in_array('invoice.project', $this->input['report_keys'])) {
             $entity['invoice.project'] = $invoice->project ? $invoice->project->name : '';// @phpstan-ignore-line
         }
+
+        if (in_array('invoice.subtotal', $this->input['report_keys'])) {
+            $entity['invoice.subtotal'] = $invoice->calc()->getSubTotal();
+        }
+
 
         return $entity;
     }

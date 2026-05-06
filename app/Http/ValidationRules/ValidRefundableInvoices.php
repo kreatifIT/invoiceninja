@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -75,7 +75,7 @@ class ValidRefundableInvoices implements Rule
                 if ($val['invoice_id'] == $invoice->id) {
                     $pivot_record = $payment->paymentables->where('paymentable_id', $invoice->id)->first();
 
-                    if ($val['amount'] > ($pivot_record->amount - $pivot_record->refunded)) {
+                    if ($pivot_record && $val['amount'] > ($pivot_record->amount - $pivot_record->refunded)) {
                         $this->error_msg = ctrans('texts.attempted_refund_failed', ['amount' => $val['amount'], 'refundable_amount' => ($pivot_record->amount - $pivot_record->refunded)]);
 
                         return false;

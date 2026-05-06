@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -45,7 +45,7 @@ class ContactExport extends BaseExport
         $this->decorator = new Decorator();
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -65,6 +65,7 @@ class ContactExport extends BaseExport
                         });
 
         $query = $this->addDateRange($query, 'client_contacts');
+        $query = $this->filterByUserPermissions($query);
 
         return $query;
 
@@ -76,7 +77,7 @@ class ContactExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
@@ -112,7 +113,7 @@ class ContactExport extends BaseExport
     }
 
 
-    private function buildRow(ClientContact $contact): array
+    protected function buildRow(ClientContact $contact): array
     {
         $transformed_contact = false;
 
@@ -135,7 +136,7 @@ class ContactExport extends BaseExport
 
             }
         }
-        
+
         return $this->decorateAdvancedFields($contact->client, $entity);
     }
 

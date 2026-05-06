@@ -5,41 +5,41 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\Events\Expense\ExpenseWasCreated;
-use App\Events\Expense\ExpenseWasUpdated;
-use App\Factory\ExpenseFactory;
-use App\Filters\ExpenseFilters;
-use App\Http\Requests\Expense\BulkExpenseRequest;
-use App\Http\Requests\Expense\CreateExpenseRequest;
-use App\Http\Requests\Expense\DestroyExpenseRequest;
-use App\Http\Requests\Expense\EditExpenseRequest;
-use App\Http\Requests\Expense\EDocumentRequest;
-use App\Http\Requests\Expense\ShowExpenseRequest;
-use App\Http\Requests\Expense\StoreExpenseRequest;
-use App\Http\Requests\Expense\UpdateExpenseRequest;
-use App\Http\Requests\Expense\UploadExpenseRequest;
-use App\Jobs\EDocument\ImportEDocument;
+use App\Utils\Ninja;
 use App\Models\Account;
 use App\Models\Expense;
+use Illuminate\Http\Response;
+use App\Factory\ExpenseFactory;
+use App\Filters\ExpenseFilters;
+use App\Utils\Traits\MakesHash;
+use App\Utils\Traits\Uploadable;
+use App\Utils\Traits\BulkOptions;
+use App\Utils\Traits\SavesDocuments;
+use App\Jobs\EDocument\ImportEDocument;
 use App\Repositories\ExpenseRepository;
 use App\Transformers\ExpenseTransformer;
-use App\Utils\Ninja;
-use App\Utils\Traits\BulkOptions;
-use App\Utils\Traits\MakesHash;
-use App\Utils\Traits\SavesDocuments;
-use App\Utils\Traits\Uploadable;
-use Illuminate\Http\Response;
+use App\Events\Expense\ExpenseWasCreated;
+use App\Events\Expense\ExpenseWasUpdated;
+use App\Services\Template\TemplateAction;
+use App\Http\Requests\Expense\EDocumentRequest;
+use App\Http\Requests\Expense\BulkExpenseRequest;
+use App\Http\Requests\Expense\EditExpenseRequest;
+use App\Http\Requests\Expense\ShowExpenseRequest;
+use App\Http\Requests\Expense\StoreExpenseRequest;
+use App\Http\Requests\Expense\CreateExpenseRequest;
+use App\Http\Requests\Expense\UpdateExpenseRequest;
+use App\Http\Requests\Expense\UploadExpenseRequest;
+use App\Http\Requests\Expense\DestroyExpenseRequest;
 
 /**
  * Class ExpenseController.
- * @covers App\Http\Controllers\ExpenseController
  */
 class ExpenseController extends BaseController
 {
@@ -329,6 +329,7 @@ class ExpenseController extends BaseController
         $user = auth()->user();
 
         $expense = ExpenseFactory::create($user->company()->id, $user->id);
+        $expense->date = now()->addSeconds($user->company()->utc_offset())->format('Y-m-d');
 
         return $this->itemResponse($expense);
     }
@@ -496,7 +497,26 @@ class ExpenseController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $expenses = Expense::withTrashed()->find($request->ids);
+        $expenses = Expense::withTrashed()->company()->find($request->ids);
+
+        if ($request->action == 'template' && $user->can('view', $expenses->first())) {
+
+            $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
+
+            TemplateAction::dispatch(
+                $expenses->pluck('hashed_id')->toArray(),
+                $request->template_id,
+                Expense::class,
+                $user->id,
+                $user->company(),
+                $user->company()->db,
+                $hash_or_response,
+                $request->boolean('send_email')
+            );
+
+            return response()->json(['message' => $hash_or_response], 200);
+        }
+
 
         if ($request->action == 'bulk_update' && $user->can('edit', $expenses->first())) {
 
@@ -511,7 +531,7 @@ class ExpenseController extends BaseController
         }
 
         if ($request->action == 'bulk_categorize' && $user->can('edit', $expenses->first())) {
-            $this->expense_repo->categorize($expenses, $request->category_id);
+            $this->expense_repo->categorize($expenses, $request->category_id); //@phpstan-ignore-line
             $expenses = collect([]);
         }
 
@@ -521,7 +541,7 @@ class ExpenseController extends BaseController
             }
         });
 
-        return $this->listResponse(Expense::withTrashed()->whereIn('id', $request->ids));
+        return $this->listResponse(Expense::withTrashed()->company()->whereIn('id', $request->ids));
     }
 
     /**

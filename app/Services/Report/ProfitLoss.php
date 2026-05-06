@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -164,7 +164,7 @@ class ProfitLoss
             $this->income_taxes += $invoice->net_converted_taxes;
 
             $currency = Currency::find(intval(str_replace('"', '', $invoice->currency_id)));
-            $currency->name = ctrans('texts.currency_'.Str::slug($currency->name, '_'));
+            $currency->name = ctrans('texts.currency_' . Str::slug($currency->name, '_'));
 
             $this->foreign_income[] = ['currency' => $currency->name, 'amount' => $invoice->amount, 'total_taxes' => $invoice->total_taxes];
         }
@@ -360,7 +360,7 @@ class ProfitLoss
         nlog($this->income_taxes);
         nlog(array_sum(array_column($this->expense_break_down, 'total')));
 
-        $csv = Writer::createFromString();
+        $csv = Writer::fromString();
 
         $csv->insertOne([ctrans('texts.profit_and_loss')]);
         $csv->insertOne([ctrans('texts.company_name'), $this->company->present()->name()]);
@@ -370,7 +370,7 @@ class ProfitLoss
 
         $csv->insertOne(['--------------------']);
 
-        $csv->insertOne([ctrans('texts.total_revenue'). "[".ctrans('texts.tax')." " .ctrans('texts.exclusive'). "]", Number::formatMoney($this->income, $this->company)]);
+        $csv->insertOne([ctrans('texts.total_revenue') . "[" . ctrans('texts.tax') . " " . ctrans('texts.exclusive') . "]", Number::formatMoney($this->income, $this->company)]);
 
         //total taxes
 
@@ -385,7 +385,7 @@ class ProfitLoss
         //total expense taxes
 
         $csv->insertOne(['--------------------']);
-        $csv->insertOne([ctrans('texts.total_expenses'). "[".ctrans('texts.tax')." " .ctrans('texts.exclusive'). "]", Number::formatMoney(array_sum(array_column($this->expense_break_down, 'total')), $this->company)]);
+        $csv->insertOne([ctrans('texts.total_expenses') . "[" . ctrans('texts.tax') . " " . ctrans('texts.exclusive') . "]", Number::formatMoney(array_sum(array_column($this->expense_break_down, 'total')), $this->company)]);
 
         $csv->insertOne([ctrans('texts.total_taxes'), Number::formatMoney(array_sum(array_column($this->expense_break_down, 'tax')), $this->company)]);
 
@@ -627,7 +627,7 @@ class ProfitLoss
                 break;
 
             case 'last_year':
-                            
+
                 $first_month_of_year = $this->company->first_month_of_year ?? 1;
                 $fin_year_start = now()->createFromDate(now()->year, $first_month_of_year, 1);
                 $fin_year_start->subYearNoOverflow();
@@ -642,7 +642,7 @@ class ProfitLoss
                 break;
 
             case 'this_year':
-                            
+
                 $first_month_of_year = $this->company->first_month_of_year ?? 1;
                 $fin_year_start = now()->createFromDate(now()->year, $first_month_of_year, 1);
 

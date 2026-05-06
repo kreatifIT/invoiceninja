@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,15 +16,19 @@ use App\DataMapper\ClientSettings;
 use Tests\TestCase;
 
 /**
- * 
+ *
  *   App\DataMapper\BaseSettings
  */
 class BaseSettingsTest extends TestCase
 {
+
+    public $settings;
+
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->settings = new \stdClass();
         $this->settings = ClientSettings::defaults();
     }
 

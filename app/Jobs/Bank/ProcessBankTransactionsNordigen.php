@@ -75,7 +75,6 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
         // UPDATE ACCOUNT
         try {
             $this->updateAccount();
-            // $this->nordigen_account = true;
         } catch (\Exception $e) {
             nlog("Nordigen: {$this->bank_integration->nordigen_account_id} - exited abnormally => " . $e->getMessage());
 
@@ -98,6 +97,10 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
         // UPDATE TRANSACTIONS
         try {
             $this->processTransactions();
+
+            // Perform Matching
+            BankMatchingService::dispatch($this->company->id, $this->company->db);
+
         } catch (\Exception $e) {
             nlog("Nordigen: {$this->bank_integration->nordigen_account_id} - exited abnormally => " . $e->getMessage());
 
@@ -109,11 +112,9 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
 
             $this->bank_integration->company->notification(new GenericNinjaAdminNotification($content))->ninja();
 
-            throw $e;
+            // throw $e;
         }
 
-        // Perform Matching
-        BankMatchingService::dispatch($this->company->id, $this->company->db);
     }
 
     // const DISCOVERED = 'DISCOVERED';   // Account was discovered but not yet processed
@@ -129,7 +130,7 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
         $account_status = $this->nordigen->isAccountActive($this->bank_integration->nordigen_account_id);
 
         //Return early if the account status is not in a good state
-        if (isset($account_status['status']) && in_array($account_status['status'], ['EXPIRED','DELETED'])) {
+        if (isset($account_status['status']) && in_array($account_status['status'], ['EXPIRED', 'DELETED', 'Invalid Account ID'])) {
 
             $this->bank_integration->disabled_upstream = true;
             $this->bank_integration->bank_account_status = $account_status['status'];
@@ -146,7 +147,7 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
 
         } elseif (isset($account_status['status']) && $account_status['status'] != 'READY') {
             //There may be other issues, return and await retry
-            nlog($account_status['id']. " Nordigen account status == ". $account_status['status']);
+            nlog($account_status['id'] . " Nordigen account status == " . $account_status['status']);
             return;
 
         }
@@ -163,6 +164,8 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
     private function processTransactions()
     {
         //Get transaction count object
+        $transactions = [];
+
         $transactions = $this->nordigen->getTransactions($this->company, $this->bank_integration->nordigen_account_id, $this->from_date);
 
         //if no transactions, update the from_date and move on
@@ -189,7 +192,12 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
 
         foreach ($transactions as $transaction) {
 
-            if (BankTransaction::where('nordigen_transaction_id', $transaction['nordigen_transaction_id'])->where('company_id', $this->company->id)->where('bank_integration_id', $this->bank_integration->id)->where('is_deleted', 0)->withTrashed()->exists()) {
+            if (BankTransaction::where('nordigen_transaction_id', $transaction['nordigen_transaction_id'])
+                            ->where('company_id', $this->company->id)
+                            ->where('bank_integration_id', $this->bank_integration->id)
+                            ->where('is_deleted', 0)
+                            ->withTrashed()
+                            ->exists()) {
                 continue;
             }
 
@@ -208,5 +216,7 @@ class ProcessBankTransactionsNordigen implements ShouldQueue
 
         $this->bank_integration->from_date = now()->subDays(5);
         $this->bank_integration->save();
+
+        BankTransaction::reguard();
     }
 }

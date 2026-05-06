@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,8 +21,16 @@ class PDF extends FPDI
 
     public function Footer()
     {
-        $this->SetFont('Arial', 'I', 9);
-        $this->SetTextColor(135, 135, 135);
+        $this->SetFont(
+            config('ninja.pdf_page_numbering_font_name'),
+            config('ninja.pdf_page_numbering_font_style'),
+            config('ninja.pdf_page_numbering_font_size')
+        );
+        $this->SetTextColor(
+            config('ninja.pdf_page_numbering_font_color_red'),
+            config('ninja.pdf_page_numbering_font_color_green'),
+            config('ninja.pdf_page_numbering_font_color_blue')
+        );
 
         $trans = ctrans('texts.pdf_page_info', ['current' => $this->PageNo(), 'total' => '{nb}']);
 
@@ -33,24 +41,22 @@ class PDF extends FPDI
 
         // Set Y position
         $this->SetY(config('ninja.pdf_page_numbering_y_alignment'));
-        
+
         // Calculate X position with offset
         $base_x = config('ninja.pdf_page_numbering_x_alignment');
-        
+
         // Set X position based on alignment
         if ($this->text_alignment == 'L') {
-            $this->SetX($this->GetX() + $base_x);
-            // Adjust cell width to account for X offset
-            $cell_width = $this->GetPageWidth() + $base_x;
+            $this->SetX($base_x + 5);
+            $cell_width = $this->GetPageWidth();
             $this->Cell($cell_width, 5, $trans, 0, 0, 'L');
         } elseif ($this->text_alignment == 'R') {
-            $this->SetX($this->GetX() + $base_x);
-            // For right alignment, calculate width from X position to right edge
-            $cell_width = $this->GetPageWidth() + $base_x;
+            $this->SetX($this->GetPageWidth() - 100 - $base_x);
+            $cell_width = 100;
             $this->Cell($cell_width, 5, $trans, 0, 0, 'R');
         } else {
-            // For center alignment, calculate appropriate width
-            $cell_width = $this->GetPageWidth() + $base_x;
+            $this->SetX(0);
+            $cell_width = $this->GetPageWidth();
             $this->Cell($cell_width, 5, $trans, 0, 0, 'C');
         }
     }

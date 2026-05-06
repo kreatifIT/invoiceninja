@@ -47,7 +47,7 @@
         language_id:
           description: 'The language id of the user'
           type: string
-          example: 1  
+          example: "1"
         verified_phone_number:
           description: 'Boolean flag if the user has their phone verified. Required to settings up 2FA'
           type: boolean
@@ -98,6 +98,16 @@
           description: 'The google 2fa secret for the user'
           type: string
           example: '123456'
+          readOnly: true
+        passkey_enabled:
+          description: 'Boolean flag if passkey auth is enabled for this user'
+          type: boolean
+          example: true
+          readOnly: true
+        passkey_count:
+          description: 'The number of registered passkeys for this user'
+          type: integer
+          example: 2
           readOnly: true
         company_user:
             $ref: '#/components/schemas/CompanyUserRef'
@@ -151,7 +161,7 @@
         language_id:
           description: 'The language id of the user'
           type: string
-          example: 1  
+          example: "1"
         verified_phone_number:
           description: 'Boolean flag if the user has their phone verified. Required to settings up 2FA'
           type: boolean
@@ -203,4 +213,30 @@
           type: string
           example: '123456'
           readOnly: true
+        passkey_enabled:
+          description: 'Boolean flag if passkey auth is enabled for this user'
+          type: boolean
+          example: true
+          readOnly: true
+        passkey_count:
+          description: 'The number of registered passkeys for this user'
+          type: integer
+          example: 2
+          readOnly: true
+        oauth_user_refresh_token:
+          description: 'OAuth refresh token for the user'
+          type: string
+          example: 'refresh_token_abc123'
+        oauth_user_token:
+          description: 'OAuth access token data for the user'
+          type: object
+          additionalProperties: true
+        shopify_user_id:
+          description: 'The unique identifier of the Shopify user'
+          type: string
+          example: '123456789'
+        user_logged_in_notification:
+          description: 'Flag indicating whether to send login notifications'
+          type: boolean
+          example: true
       type: object

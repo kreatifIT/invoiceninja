@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,12 +16,18 @@ use App\Utils\Traits\MakesHash;
 use Tests\TestCase;
 
 /**
- * 
+ *
  *   App\Utils\Number
  */
 class CompareCollectionTest extends TestCase
 {
     use MakesHash;
+
+    public $map;
+    public $view_permission;
+    public $edit_permission;
+    public $is_admin;
+    public $is_not_admin;
 
     protected function setUp(): void
     {

@@ -29,7 +29,6 @@ class BankTransactionRuleTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -45,7 +44,7 @@ class BankTransactionRuleTest extends TestCase
         $this->markTestSkipped('ignore');
     }
 
-    public function testNewCreditMatchingRulesInvoiceStartsWith() 
+    public function testNewCreditMatchingRulesInvoiceStartsWith()
     {
 
         $bi = BankIntegration::factory()->create([
@@ -55,7 +54,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -76,8 +75,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$invoice.number',
+                    'search_key' => 'description',
                     'operator' => 'starts_with',
+                    'value' => '$invoice.number',
                 ]
             ]
         ]);
@@ -115,7 +115,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -136,8 +136,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$invoice.number',
+                    'search_key' => 'description',
                     'operator' => 'contains',
+                    'value' => '$invoice.number',
                 ]
             ]
         ]);
@@ -157,7 +158,7 @@ class BankTransactionRuleTest extends TestCase
 
         (new ProcessBankRules($bt))->run();
 
-        $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($i->id);
@@ -175,7 +176,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -196,8 +197,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$invoice.number',
+                    'search_key' => 'description',
                     'operator' => 'is',
+                    'value' => '$invoice.number',
                 ]
             ]
         ]);
@@ -236,7 +238,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -257,8 +259,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$invoice.amount',
+                    'search_key' => 'amount',
                     'operator' => '=',
+                    'value' => '$invoice.amount',
                 ]
             ]
         ]);
@@ -277,7 +280,7 @@ class BankTransactionRuleTest extends TestCase
 
         (new ProcessBankRules($bt))->run();
 
-        $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($i->id);
@@ -295,7 +298,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -316,8 +319,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$payment.custom1',
+                    'search_key' => 'description',
                     'operator' => 'starts_with',
+                    'value' => '$payment.custom1',
                 ]
             ]
         ]);
@@ -352,7 +356,7 @@ class BankTransactionRuleTest extends TestCase
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -373,8 +377,9 @@ class BankTransactionRuleTest extends TestCase
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$payment.transaction_reference',
+                    'search_key' => 'description',
                     'operator' => 'starts_with',
+                    'value' => '$payment.transaction_reference',
                 ]
             ]
         ]);
@@ -392,7 +397,7 @@ class BankTransactionRuleTest extends TestCase
         (new ProcessBankRules($bt))->run();
 
 
-$bt = $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($p->id);
@@ -410,7 +415,7 @@ $bt = $bt->fresh();
             ]);
 
         $hash = md5(time());
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -431,8 +436,9 @@ $bt = $bt->fresh();
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$payment.amount',
+                    'search_key' => 'amount',
                     'operator' => '=',
+                    'value' => '$payment.amount',
                 ]
             ]
         ]);
@@ -450,7 +456,7 @@ $bt = $bt->fresh();
         (new ProcessBankRules($bt))->run();
 
 
-$bt = $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($p->id);
@@ -468,7 +474,7 @@ $bt = $bt->fresh();
             ]);
 
         $hash = md5(time());
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -489,8 +495,9 @@ $bt = $bt->fresh();
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$payment.transaction_reference',
+                    'search_key' => 'description',
                     'operator' => 'is',
+                    'value' => '$payment.transaction_reference',
                 ]
             ]
         ]);
@@ -508,7 +515,7 @@ $bt = $bt->fresh();
         (new ProcessBankRules($bt))->run();
 
 
-$bt = $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($p->id);
@@ -526,7 +533,7 @@ $bt = $bt->fresh();
             ]);
 
         $hash = Str::random(32);
-        $rand_amount = rand(1000,10000000);
+        $rand_amount = rand(1000, 10000000);
 
         $bt = BankTransaction::factory()->create([
             'bank_integration_id' => $bi->id,
@@ -547,8 +554,9 @@ $bt = $bt->fresh();
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$payment.transaction_reference',
+                    'search_key' => 'description',
                     'operator' => 'contains',
+                    'value' => '$payment.transaction_reference',
                 ]
             ]
         ]);
@@ -566,7 +574,7 @@ $bt = $bt->fresh();
         (new ProcessBankRules($bt))->run();
 
 
-$bt = $bt->fresh();
+        $bt = $bt->fresh();
 
         $this->assertEquals(BankTransaction::STATUS_MATCHED, $bt->status_id);
         $this->assertNotNull($p->id);
@@ -604,8 +612,9 @@ $bt = $bt->fresh();
             'applies_to' => 'CREDIT',
             'rules' => [
                 [
-                    'search_key' => '$invoice.number',
+                    'search_key' => 'description',
                     'operator' => 'is',
+                    'value' => '$invoice.number',
                 ]
             ]
         ]);

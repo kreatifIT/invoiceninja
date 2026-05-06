@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateExpensesIndex implements MigrationInterface
 {
@@ -13,6 +14,17 @@ final class CreateExpensesIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+       
+
+
+        $indexExistsResponse = $client->indices()->exists(['index' => 'expenses']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
+
         $mapping = [
             'properties' => [
                 // Core expense fields
@@ -58,7 +70,7 @@ final class CreateExpensesIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('expenses_v2', $mapping);
+        Index::createRaw('expenses', $mapping);
     }
 
     /**
@@ -66,6 +78,6 @@ final class CreateExpensesIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('expenses_v2');
+        Index::dropIfExists('expenses');
     }
 }

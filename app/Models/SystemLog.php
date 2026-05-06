@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -79,6 +79,10 @@ class SystemLog extends Model
 
     public const CATEGORY_LOG = 6;
 
+    public const CATEGORY_VERIFACTU = 7;
+
+    public const CATEGORY_PEPPOL = 8;
+
     /* Event IDs*/
     public const EVENT_PAYMENT_RECONCILIATION_FAILURE = 10;
 
@@ -115,6 +119,14 @@ class SystemLog extends Model
     public const EVENT_USER = 61;
 
     public const EVENT_INBOUND_MAIL_BLOCKED = 62;
+
+    public const EVENT_VERIFACTU_FAILURE = 70;
+
+    public const EVENT_VERIFACTU_SUCCESS = 71;
+
+    public const EVENT_PEPPOL_FAILURE = 72;
+
+    public const EVENT_PEPPOL_SUCCESS = 73;
 
     /*Type IDs*/
     public const TYPE_PAYPAL = 300;
@@ -161,6 +173,8 @@ class SystemLog extends Model
 
     public const TYPE_POWERBOARD = 327;
 
+    public const TYPE_LAWPAY = 328;
+
     public const TYPE_QUOTA_EXCEEDED = 400;
 
     public const TYPE_UPSTREAM_FAILURE = 401;
@@ -180,6 +194,16 @@ class SystemLog extends Model
     public const TYPE_LOGIN_FAILURE = 801;
 
     public const TYPE_GENERIC = 900;
+
+    public const TYPE_VERIFACTU_CANCELLATION = 1000;
+
+    public const TYPE_VERIFACTU_INVOICE = 1001;
+
+    public const TYPE_VERIFACTU_RECTIFICATION = 1002;
+
+    public const TYPE_PEPPOL_SEND = 1100;
+
+    public const TYPE_PEPPOL_RECEIVE = 1101;
 
     protected $fillable = [
         'client_id',

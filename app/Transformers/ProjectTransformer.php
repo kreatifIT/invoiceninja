@@ -5,21 +5,23 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Transformers;
 
-use App\Models\Task;
-use App\Models\Quote;
 use App\Models\Client;
-use App\Models\Project;
 use App\Models\Document;
 use App\Models\Expense;
 use App\Models\Invoice;
+use App\Models\Project;
+use App\Models\Quote;
+use App\Models\Task;
+use App\Models\User;
 use App\Utils\Traits\MakesHash;
+use League\Fractal\Resource\Item;
 
 /**
  * class ProjectTransformer.
@@ -41,7 +43,31 @@ class ProjectTransformer extends EntityTransformer
         'invoices',
         'expenses',
         'quotes',
+        'user',
+        'assigned_user',
     ];
+
+    public function includeUser(Project $project): ?Item
+    {
+        $transformer = new UserTransformer($this->serializer);
+
+        if (!$project->user) { //@phpstan-ignore-line
+            return null;
+        }
+
+        return $this->includeItem($project->user, $transformer, User::class);
+    }
+
+    public function includeAssignedUser(Project $project): ?Item
+    {
+        $transformer = new UserTransformer($this->serializer);
+
+        if (!$project->assigned_user) {
+            return null;
+        }
+
+        return $this->includeItem($project->assigned_user, $transformer, User::class);
+    }
 
     public function includeDocuments(Project $project)
     {

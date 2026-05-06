@@ -49,9 +49,7 @@ class EInvoiceReport extends BaseExport
      *     'client_id',
      * ]
      */
-    public function __construct(public Company $company, public array $input)
-    {
-    }
+    public function __construct(public Company $company, public array $input) {}
 
     public function run()
     {
@@ -61,7 +59,7 @@ class EInvoiceReport extends BaseExport
         $t = app('translator');
         $t->replace(Ninja::transformTranslations($this->company->settings));
 
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         $this->csv->insertOne([]);
@@ -82,16 +80,16 @@ class EInvoiceReport extends BaseExport
             ->where('company_id', $this->company->id)
             ->where('is_deleted', 0)
             ->with(['client']);
-    
+
         $query = $this->addDateRange($query, 'invoices');
 
         $invoices = $query->cursor();
-           
+
         // Process invoices
         foreach ($invoices as $invoice) {
             /** @var Invoice $invoice */
             $einvoiceStatus = $invoice->backup?->guid ? 'Sent via e-invoicing' : 'Not sent via e-invoicing';
-            
+
             $this->csv->insertOne([
                 $invoice->number,
                 $invoice->client->present()->name(),

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -147,12 +147,12 @@ abstract class QueryFilters
 
         return $this->builder->where(function ($query) use ($filters) {
             if (in_array(self::STATUS_ACTIVE, $filters)) {
-                $query = $query->orWhereNull('deleted_at');
+                $query = $query->orWhereNull($this->builder->getModel()->getTable() . '.deleted_at');
             }
 
             if (in_array(self::STATUS_ARCHIVED, $filters)) {
                 $query = $query->orWhere(function ($q) {
-                    $q->whereNotNull('deleted_at')->where('is_deleted', 0);
+                    $q->whereNotNull($this->builder->getModel()->getTable() . '.deleted_at')->where('is_deleted', 0);
                 });
             }
 
@@ -210,7 +210,7 @@ abstract class QueryFilters
 
         try {
             if (is_numeric($value)) {
-                $created_at = Carbon::createFromTimestamp((int)$value);
+                $created_at = Carbon::createFromTimestamp((int) $value);
             } else {
                 $created_at = Carbon::parse($value);
             }
@@ -229,7 +229,7 @@ abstract class QueryFilters
 
         try {
             if (is_numeric($value)) {
-                $created_at = Carbon::createFromTimestamp((int)$value);
+                $created_at = Carbon::createFromTimestamp((int) $value);
             } else {
                 $created_at = Carbon::parse($value);
             }
@@ -328,15 +328,50 @@ abstract class QueryFilters
         }
 
         if ($this->with_property == 'id') {
-            $value = $this->decodePrimaryKey($value);
+
+            if (str_contains($value, ',')) {
+                $value = $this->transformKeys(explode(',', $value));
+            } else {
+                $value = [$this->decodePrimaryKey($value)];
+            }
+
+        } else {
+            $value = [$value];
         }
 
         return $this->builder
-            ->orWhere($this->with_property, $value)
-            ->orderByRaw("{$this->with_property} = ? DESC", [$value])
+            ->orWhereIn($this->with_property, $value)
+            ->orderByRaw("{$this->with_property} = ? DESC", [$value[0]])
             ->company();
     }
 
+
+
+    /**
+     * Filter by created at date range
+     *
+     * @param string $date_range
+     * @return Builder
+     */
+    public function created_between(string $date_range = ''): Builder
+    {
+        $parts = explode(",", $date_range);
+
+        if (count($parts) != 2 || !in_array('created_at', \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
+            return $this->builder;
+        }
+
+        try {
+
+            $start_date = Carbon::parse($parts[0]);
+            $end_date = Carbon::parse($parts[1]);
+
+            return $this->builder->whereBetween('created_at', [$start_date, $end_date]);
+        } catch (\Exception $e) {
+            return $this->builder;
+        }
+
+    }
 
     /**
      * Filter by date range
@@ -362,6 +397,28 @@ abstract class QueryFilters
             return $this->builder;
         }
 
+    }
+
+    public function assigned_user_ids(string $assigned_user_ids = ''): Builder
+    {
+        if (strlen($assigned_user_ids) == 0 || !in_array('assigned_user_id', \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
+            return $this->builder;
+        }
+
+        return $this->builder->where(function ($q) use ($assigned_user_ids) {
+            $q->whereIn('assigned_user_id', $this->transformKeys(explode(',', $assigned_user_ids)));
+        });
+    }
+
+    public function client_ids(string $client_ids = ''): Builder
+    {
+        if (strlen($client_ids) == 0 || !in_array('client_id', \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
+            return $this->builder;
+        }
+
+        return $this->builder->where(function ($q) use ($client_ids) {
+            $q->whereIn('client_id', $this->transformKeys(explode(',', $client_ids)));
+        });
     }
 
     /**

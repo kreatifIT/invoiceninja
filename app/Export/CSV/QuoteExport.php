@@ -40,7 +40,7 @@ class QuoteExport extends BaseExport
         $this->decorator = new Decorator();
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -58,7 +58,7 @@ class QuoteExport extends BaseExport
 
         $query = Quote::query()
                         ->withTrashed()
-                        ->with('client')
+                        ->with('client', 'location')
                         ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         })
@@ -77,6 +77,8 @@ class QuoteExport extends BaseExport
         }
 
         $query = $this->addQuoteStatusFilter($query, $this->input['status'] ?? '');
+
+        $query = $this->filterByUserPermissions($query);
 
         if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
@@ -116,7 +118,7 @@ class QuoteExport extends BaseExport
     public function run()
     {
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         $query = $this->init();
@@ -134,7 +136,7 @@ class QuoteExport extends BaseExport
         return $this->csv->toString();
     }
 
-    private function buildRow(Quote $quote): array
+    protected function buildRow(Quote $quote): array
     {
         $transformed_invoice = $this->quote_transformer->transform($quote);
 
@@ -184,6 +186,9 @@ class QuoteExport extends BaseExport
             $entity['quote.user_id'] = $quote->user ? $quote->user->present()->name() : '';
         }
 
+        if (in_array('quote.subtotal', $this->input['report_keys'])) {
+            $entity['quote.subtotal'] = $quote->calc()->getSubTotal();
+        }
 
         return $entity;
     }

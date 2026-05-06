@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,10 +36,10 @@ class BulkClientRequest extends Request
         $user = auth()->user();
 
         return [
-            'action' => 'required|string|in:archive,restore,delete,template,assign_group,bulk_update',
+            'action' => 'required|string|in:archive,restore,delete,template,assign_group,bulk_update,clone',
             'ids' => ['required','bail','array',Rule::exists('clients', 'id')->where('company_id', $user->company()->id)],
             'template' => 'sometimes|string',
-            'template_id' => 'sometimes|string',
+            'template_id' => 'sometimes|string|required_if:action,template',
             'group_settings_id' => ['required_if:action,assign_group',Rule::exists('group_settings', 'id')->where('company_id', $user->company()->id)],
             'send_email' => 'sometimes|bool',
             'column' => ['required_if:action,bulk_update', 'string', Rule::in(\App\Models\Client::$bulk_update_columns)],

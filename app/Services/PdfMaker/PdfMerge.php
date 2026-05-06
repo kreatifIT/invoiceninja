@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,9 +23,7 @@ class PdfMerge
      * @param  array $files
      * @return void
      */
-    public function __construct(private array $files)
-    {
-    }
+    public function __construct(private array $files) {}
 
     public function run()
     {
@@ -52,7 +50,12 @@ class PdfMerge
 
             for ($i = 0; $i < $pageCount; $i++) {
                 $tpl = $pdf->importPage($i + 1, '/MediaBox');
-                $pdf->addPage();
+                $size = $pdf->getTemplateSize($tpl);
+
+                // Preserve original page orientation and dimensions
+                $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
+                $pdf->addPage($orientation, [$size['width'], $size['height']]);
+
                 $pdf->useTemplate($tpl);
             }
         }

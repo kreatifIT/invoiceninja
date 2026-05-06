@@ -4,6 +4,7 @@
           description: "The unique hashed ID of the credit"
           type: string
           example: Opnel5aKBz
+          readOnly: true
         user_id:
           description: "The unique hashed ID of the user associated with the credit"
           type: string
@@ -19,7 +20,7 @@
         status_id:
           description: "The ID representing the current status of the credit"
           type: string
-          example: 3
+          example: "3"
         invoice_id:
           description: "The unique hashed ID of the linked invoice to which the credit is applied"
           type: string
@@ -101,6 +102,11 @@
           description: 'An array of objects which define the line items of the credit'
           items:
             $ref: '#/components/schemas/InvoiceItem'
+        invitations:
+          type: array
+          description: 'An array of objects which define the invitations of the credit'
+          items:
+            $ref: '#/components/schemas/CreditInvitation'
         amount:
           description: "The total amount of the credit"
           type: number
@@ -189,17 +195,17 @@
           description: 'Second Custom Surcharge'
           type: number
           format: float
-          example: '10.00'
+          example: 10.00
         custom_surcharge3:
           description: 'Third Custom Surcharge'
           type: number
           format: float
-          example: '10.00'
+          example: 10.00
         custom_surcharge4:
           description: 'Fourth Custom Surcharge'
           type: number
           format: float
-          example: '10.00'
+          example: 10.00
         custom_surcharge_tax1:
           description: 'Toggles charging taxes on custom surcharge amounts'
           type: boolean
@@ -218,6 +224,27 @@
           example: true
         location_id:
           description: 'The client location id that this invoice relates to'
+          type: string
+          example: Opnel5aKBz
+        design_id:
+          description: 'The unique identifier of the design template used for this credit'
+          type: string
+          example: Opnel5aKBz
+        exchange_rate:
+          description: 'The exchange rate used for currency conversion'
+          type: number
+          format: float
+          example: 1.0
+        project_id:
+          description: 'The unique identifier of the project associated with this credit'
+          type: string
+          example: Opnel5aKBz
+        subscription_id:
+          description: 'The unique identifier of the subscription associated with this credit'
+          type: string
+          example: Opnel5aKBz
+        vendor_id:
+          description: 'The unique identifier of the vendor associated with this credit'
           type: string
           example: Opnel5aKBz
       type: object

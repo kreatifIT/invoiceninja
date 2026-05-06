@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateQuotesIndex implements MigrationInterface
 {
@@ -13,6 +14,16 @@ final class CreateQuotesIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+        
+        $indexExistsResponse = $client->indices()->exists(['index' => 'quotes']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
+
+
         $mapping = [
             'properties' => [
                 // Core quote fields
@@ -76,7 +87,7 @@ final class CreateQuotesIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('quotes_v2', $mapping);
+        Index::createRaw('quotes', $mapping);
     }
 
     /**
@@ -84,6 +95,6 @@ final class CreateQuotesIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('quotes_v2');
+        Index::dropIfExists('quotes');
     }
 }

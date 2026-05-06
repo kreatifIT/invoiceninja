@@ -20,9 +20,7 @@ class MergeEDocument implements ShouldQueue
 
     public $deleteWhenMissingModels = true;
 
-    public function __construct(private mixed $document, private string $pdf_file)
-    {
-    }
+    public function __construct(private mixed $document, private string $pdf_file) {}
 
     /**
      * Execute the job.
@@ -31,6 +29,7 @@ class MergeEDocument implements ShouldQueue
      */
     public function handle(): string
     {
+        nlog("MergeEDocument:: handle");
         $settings_entity = ($this->document instanceof PurchaseOrder) ? $this->document->vendor : $this->document->client;
 
         $e_document_type = strlen($settings_entity->getSetting('e_invoice_type')) > 2 ? $settings_entity->getSetting('e_invoice_type') : "XInvoice_3_0";

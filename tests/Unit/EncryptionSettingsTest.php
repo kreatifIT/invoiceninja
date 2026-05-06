@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -14,10 +15,12 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * 
+ *
  */
 class EncryptionSettingsTest extends TestCase
 {
+    private string $settings;
+
     protected function setUp(): void
     {
         parent::setUp();

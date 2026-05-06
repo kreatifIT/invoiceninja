@@ -30,6 +30,9 @@
         - $ref: "#/components/parameters/X-API-TOKEN"
         - $ref: "#/components/parameters/X-Requested-With"
         - $ref: "#/components/parameters/include"
+        - $ref: "#/components/parameters/index"
+        - $ref: "#/components/parameters/per_page_meta"
+        - $ref: "#/components/parameters/page_meta"
         - $ref: "#/components/parameters/status"
         - $ref: "#/components/parameters/client_id"
         - $ref: "#/components/parameters/created_at"
@@ -148,7 +151,7 @@
           required: false
           schema:
             type: integer
-          example: ?status_id=1
+          example: 1
       responses:
         200:
           description: "A list of invoices"
@@ -608,6 +611,7 @@
 
   /api/v1/invoices/create:
     get:
+      operationId: getInvoiceCreate
       tags:
         - invoices
       summary: "Blank invoice"
@@ -850,6 +854,7 @@
           $ref: "#/components/responses/default"
   "/api/v1/invoice/{invitation_key}/download":
     get:
+      operationId: downloadInvoiceByInvitation
       tags:
         - invoices
       summary: "Download invoice PDF"
@@ -907,6 +912,7 @@
           $ref: "#/components/responses/default"
   "/api/v1/invoices/{id}/delivery_note":
     get:
+      operationId: getInvoiceDeliveryNote
       tags:
         - invoices
       summary: "Download delivery note"
@@ -964,6 +970,7 @@
           $ref: "#/components/responses/default"
   "/api/v1/invoices/{id}/upload":
     post:
+      operationId: uploadInvoiceDocument
       tags:
         - invoices
       summary: "Add invoice document"

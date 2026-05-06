@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,8 +13,9 @@
 namespace App\Models;
 
 use App\Utils\Number;
-use Elastic\ScoutDriverPlus\Searchable;
+use App\DataMapper\ExpenseSync;
 use Illuminate\Support\Facades\App;
+use Elastic\ScoutDriverPlus\Searchable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -75,11 +76,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read \App\Models\Currency|null $currency
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \App\Models\PaymentType|null $payment_type
+ * @property-read \App\Models\Currency|null $invoice_currency
  * @property-read \App\Models\Project|null $project
  * @property-read \App\Models\PurchaseOrder|null $purchase_order
  * @property-read \App\Models\User $user
  * @property-read \App\Models\Vendor|null $vendor
  * @property-read \App\Models\Currency|null $invoice_currency
+ * @property \App\DataMapper\ExpenseSync|null $sync
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Database\Factories\ExpenseFactory factory($count = null, $state = [])
@@ -109,7 +112,7 @@ class Expense extends BaseModel
      */
     public function searchableAs(): string
     {
-        return 'expenses_v2';
+        return 'expenses';
     }
 
     protected $fillable = [
@@ -159,6 +162,7 @@ class Expense extends BaseModel
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'e_invoice' => 'object',
+        'sync' => ExpenseSync::class,
     ];
 
     public static array $bulk_update_columns = [
@@ -177,33 +181,45 @@ class Expense extends BaseModel
 
     protected $touches = [];
 
-    public function toSearchableArray()
+    public function toSearchableArray(): array
+    {
+        return config('scout.index_version', 'legacy') === 'v2'
+            ? $this->toSearchableArrayV2()
+            : $this->toSearchableArrayLegacy();
+    }
+
+    public function toSearchableArrayLegacy(): array
     {
         $locale = $this->company->locale();
 
         App::setLocale($locale);
 
         return [
-            'id' => $this->company->db.":".$this->id,
+            'id' => $this->company->db . ":" . $this->id,
             'name' => ctrans('texts.expense') . " " . ($this->number ?? '') . ' | ' . Number::formatMoney($this->amount, $this->company) . ' | ' . $this->translateDate($this->date, $this->company->date_format(), $locale),
             'hashed_id' => $this->hashed_id,
-            'number' => (string)$this->number,
-            'is_deleted' => (bool)$this->is_deleted,
+            'number' => (string) $this->number,
+            'is_deleted' => (bool) $this->is_deleted,
             'amount' => (float) $this->amount,
             'date' => $this->date ?? null,
-            'custom_value1' => (string)$this->custom_value1,
-            'custom_value2' => (string)$this->custom_value2,
-            'custom_value3' => (string)$this->custom_value3,
-            'custom_value4' => (string)$this->custom_value4,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
             'company_key' => $this->company->company_key,
-            'public_notes' => (string)$this->public_notes,
-            'private_notes' => (string)$this->private_notes
+            'public_notes' => (string) $this->public_notes,
+            'private_notes' => (string) $this->private_notes,
         ];
+    }
+
+    public function toSearchableArrayV2(): array
+    {
+        return $this->toSearchableArrayLegacy();
     }
 
     public function getScoutKey()
     {
-        return $this->company->db.":".$this->id;
+        return $this->company->db . ":" . $this->id;
     }
 
 
@@ -279,7 +295,7 @@ class Expense extends BaseModel
 
     public function project(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(Project::class);
+        return $this->belongsTo(Project::class)->withTrashed();
     }
 
     public function transaction(): \Illuminate\Database\Eloquent\Relations\BelongsTo

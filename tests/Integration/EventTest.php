@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -86,7 +87,7 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * 
+ *
  */
 class EventTest extends TestCase
 {
@@ -94,13 +95,9 @@ class EventTest extends TestCase
     use MakesHash;
     use DatabaseTransactions;
 
-    public $faker;
-
     public function setUp(): void
     {
         parent::setUp();
-
-        $this->faker = \Faker\Factory::create();
 
         $this->makeTestData();
 
@@ -570,6 +567,98 @@ class EventTest extends TestCase
 
     }
 
+    public function testInvoiceWasUpdatedFiresOnceWithMarkSent(): void
+    {
+        $data = [
+            'client_id' => $this->client->hashed_id,
+            'number' => 'mark-sent-test-1',
+            'status_id' => Invoice::STATUS_DRAFT,
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices/', $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        Event::fake();
+
+        $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->putJson('/api/v1/invoices/' . $arr['data']['id'] . '?mark_sent=true', [
+            'client_id' => $this->client->hashed_id,
+        ])->assertStatus(200);
+
+        Event::assertDispatchedTimes(InvoiceWasUpdated::class, 1);
+    }
+
+    public function testInvoiceWasUpdatedFiresOnceWithSendEmail(): void
+    {
+        $data = [
+            'client_id' => $this->client->hashed_id,
+            'number' => 'send-email-test-1',
+            'status_id' => Invoice::STATUS_DRAFT,
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices/', $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        Event::fake();
+
+        $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->putJson('/api/v1/invoices/' . $arr['data']['id'] . '?send_email=true', [
+            'client_id' => $this->client->hashed_id,
+        ])->assertStatus(200);
+
+        Event::assertDispatchedTimes(InvoiceWasUpdated::class, 1);
+    }
+
+    public function testInvoiceWasUpdatedFiresOnceWithPaidOnDraftInvoice(): void
+    {
+        $data = [
+            'client_id' => $this->client->hashed_id,
+            'number' => 'paid-draft-test-1',
+            'status_id' => Invoice::STATUS_DRAFT,
+            'line_items' => [
+                [
+                    'product_key' => 'test',
+                    'notes' => 'test',
+                    'cost' => 100,
+                    'qty' => 1,
+                ],
+            ],
+        ];
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/invoices/', $data)
+        ->assertStatus(200);
+
+        $arr = $response->json();
+
+        Event::fake();
+
+        $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->putJson('/api/v1/invoices/' . $arr['data']['id'] . '?paid=true', [
+            'client_id' => $this->client->hashed_id,
+        ])->assertStatus(200);
+
+        Event::assertDispatchedTimes(InvoiceWasUpdated::class, 1);
+    }
+
 
 
     public function testRecurringInvoiceEvents()
@@ -707,7 +796,7 @@ class EventTest extends TestCase
     {
         $this->withoutMiddleware(PasswordProtection::class);
 
-        $u = \App\Models\User::where('email','bob1@good.ole.boys.com')->cursor()->each(function($user) {
+        $u = \App\Models\User::where('email', 'bob1@good.ole.boys.com')->cursor()->each(function ($user) {
             $user->account->forceDelete();
         });
 

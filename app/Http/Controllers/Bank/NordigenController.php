@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -69,7 +69,7 @@ class NordigenController extends BaseController
                 'account' => $company->account,
                 'institutions' => $institutions,
                 'institutionId' => $data['institution_id'] ?? null,
-                'redirectUrl' => $context['redirect'] . '?action=nordigen_connect&status=user-aborted'
+                'redirectUrl' => $context['redirect'] . '?action=nordigen_connect&status=user-aborted',
             ]);
         }
 
@@ -79,18 +79,13 @@ class NordigenController extends BaseController
 
         try {
             $txDays = $data['tx_days'] ?? $institution['transaction_total_days'] ?? 90; //@phpstan-ignore-line
-            
+
             $agreement = $nordigen->createAgreement($institution, $institution['max_access_valid_for_days'], $txDays);//@2025-07-01: this is the correct way to get the access days
 
-            // $agreement = $nordigen->createAgreement($institution, $data['access_days'] ?? 9999, $txDays); 
-
-            //this does not work in a multi tenant environment, it simply grabs the first agreement, without differentiating between companies. we may need to store the current requistion...
-            // $agreement = $nordigen->firstValidAgreement($institution['id'], $data['access_days'] ?? 0, $txDays)
-            //           ?? $nordigen->createAgreement($institution, $data['max_access_valid_for_days'] ?? 90, $txDays);
         } catch (\Exception $e) {
             $debug = "{$e->getMessage()} ({$e->getCode()})";
 
-            nlog("Nordigen: Could not create an agreement with ${institution['name']}: {$debug}");
+            nlog("Nordigen: Could not create an agreement with {$institution['name']}: {$debug}");
 
             return $this->failed('eua-failure', $context, $company);
         }
@@ -219,12 +214,12 @@ class NordigenController extends BaseController
             }
         }
 
-        // perform update in background
-        $company->account->bank_integrations
-            ->where('integration_type', BankIntegration::INTEGRATION_TYPE_NORDIGEN)
+        // perform update in background for newly connected integrations only
+        BankIntegration::whereIn('id', $bank_integration_ids)
             ->where('auto_sync', true)
+            ->where('disabled_upstream', false)
             ->each(function ($bank_integration) {
-                ProcessBankTransactionsNordigen::dispatch($bank_integration);
+                ProcessBankTransactionsNordigen::dispatch($bank_integration)->delay(now()->addHour());
             });
 
         // prevent rerun of this method with same ref

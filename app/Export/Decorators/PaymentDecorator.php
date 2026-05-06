@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -94,7 +94,7 @@ class PaymentDecorator extends Decorator implements DecoratorInterface
 
     public function private_notes(Payment $payment)
     {
-        return strip_tags($payment->private_notes) ?? '';
+        return strip_tags($payment->private_notes ?? '');
     }
 
     public function user_id(Payment $payment)

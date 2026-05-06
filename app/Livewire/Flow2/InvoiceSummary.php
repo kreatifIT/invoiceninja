@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,10 +13,13 @@
 namespace App\Livewire\Flow2;
 
 use App\Models\InvoiceInvitation;
+use App\Utils\Ninja;
 use App\Utils\Number;
-use Livewire\Component;
-use Livewire\Attributes\On;
 use App\Utils\Traits\WithSecureContext;
+use Illuminate\Support\Facades\App;
+use Livewire\Attributes\Lazy;
+use Livewire\Attributes\On;
+use Livewire\Component;
 
 class InvoiceSummary extends Component
 {
@@ -28,48 +31,64 @@ class InvoiceSummary extends Component
 
     public $gateway_fee;
 
+    public $isReady = false;
+
+    public $_key;
+
+    #[On(self::CONTEXT_READY)]
+    public function onContextReady(): void
+    {
+        $this->isReady = true;
+        $this->loadContextData();
+    }
+
     public function mount()
     {
-
-        $_context = $this->getContext();
+        $_context = $this->getContext($this->_key);
 
         $contact = $_context['contact'] ?? auth()->guard('contact')->user();
-        $this->invoices = $_context['payable_invoices'];
-        $this->amount = Number::formatMoney($_context['amount'], $contact->client);
-        $this->gateway_fee = isset($_context['gateway_fee']) ? Number::formatMoney($_context['gateway_fee'], $contact->client) : false;
 
+        \Illuminate\Support\Facades\App::forgetInstance('translator');
+        $t = app('translator');
+        \Illuminate\Support\Facades\App::setLocale($contact->preferredLocale());
+        $t->replace(\App\Utils\Ninja::transformTranslations($contact->client->getMergedSettings()));
+        
+        if (!empty($_context)) {
+            $this->isReady = true;
+            $this->loadContextData();
+        }
+    }
+
+    private function loadContextData(): void
+    {
+        $_context = $this->getContext($this->_key);
+
+        if (empty($_context)) {
+            return;
+        }
+
+        $contact = $_context['contact'] ?? auth()->guard('contact')->user();
+        $this->invoices = $_context['payable_invoices'] ?? [];
+        $this->amount = isset($_context['amount']) ? Number::formatMoney($_context['amount'], $contact->client) : '';
+        $this->gateway_fee = isset($_context['gateway_fee']) && $_context['gateway_fee'] > 0 ? Number::formatMoney($_context['gateway_fee'], $contact->client) : false;
     }
 
     #[On(self::CONTEXT_UPDATE)]
     public function onContextUpdate(): void
     {
-
-        $_context = $this->getContext();
-
-        // refactor logic for updating the price for eg if it changes with under/over pay
-        $contact = $_context['contact'] ?? auth()->guard('contact')->user();
-        $this->invoices = $_context['payable_invoices'];
-        $this->amount = Number::formatMoney($_context['amount'], $contact->client);
-        $this->gateway_fee = isset($_context['gateway_fee']) ? Number::formatMoney($_context['gateway_fee'], $contact->client) : false;
-
+        $this->loadContextData();
     }
 
     #[On('payment-view-rendered')]
-    public function handlePaymentViewRendered()
+    public function handlePaymentViewRendered(): void
     {
-
-        $_context = $this->getContext();
-
-        $contact = $_context['contact'] ?? auth()->guard('contact')->user();
-        $this->amount = Number::formatMoney($_context['amount'], $contact->client);
-        $this->gateway_fee = isset($_context['gateway_fee']) ? Number::formatMoney($_context['gateway_fee'], $contact->client) : false;
-
+        $this->loadContextData();
     }
 
     public function downloadDocument($invoice_hashed_id)
     {
 
-        $_context = $this->getContext();
+        $_context = $this->getContext($this->_key);
 
         $invitation_id = $_context['invitation_id'];
 
@@ -77,7 +96,7 @@ class InvoiceSummary extends Component
 
         $invite = \App\Models\InvoiceInvitation::on($db)->withTrashed()->find($invitation_id);
 
-        $file_name = $invite->invoice->numberFormatter().'.pdf';
+        $file_name = $invite->invoice->numberFormatter() . '.pdf';
 
         $file = (new \App\Jobs\Entity\CreateRawPdf($invite))->handle();
 
@@ -91,10 +110,13 @@ class InvoiceSummary extends Component
 
     public function render(): \Illuminate\Contracts\View\Factory|\Illuminate\View\View
     {
-        $contact = $this->getContext()['contact'] ?? auth()->guard('contact')->user();
+        $_context = $this->getContext($this->_key);
+
+        $contact = $_context['contact'] ?? auth()->guard('contact')->user();
 
         return render('flow2.invoices-summary', [
-            'client' => $contact->client,
+            'client' => $contact->client ?? null,
+            'isReady' => $this->isReady,
         ]);
 
     }

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -87,9 +87,7 @@ class Email implements ShouldQueue
     /** The mailable */
     public Mailable $mailable;
 
-    public function __construct(public EmailObject $email_object, public Company $company)
-    {
-    }
+    public function __construct(public EmailObject $email_object, public Company $company) {}
 
     /**
      * The backoff time between retries.
@@ -255,7 +253,7 @@ class Email implements ShouldQueue
     private function incrementEmailCounter(): void
     {
         if (in_array($this->email_object->settings->email_sending_method, ['default','mailgun','postmark'])) {
-            Cache::increment("email_quota".$this->company->account->key);
+            Cache::increment("email_quota" . $this->company->account->key);
         }
     }
 
@@ -289,6 +287,7 @@ class Email implements ShouldQueue
         /* Attempt the send! */
         try {
             nlog("Using mailer => " . $this->mailer . " " . now()->toDateTimeString());
+            nlog("Trying to send to " . reset($this->email_object->to)?->address . " " . now()->toDateTimeString());
 
             $mailer->send($this->mailable);
 
@@ -351,7 +350,7 @@ class Email implements ShouldQueue
                 $message = null;
             }
 
-        } catch(\ErrorException $e){ //@todo - remove after symfony/mailer is updated with bug fix
+        } catch (\ErrorException $e) { //@todo - remove after symfony/mailer is updated with bug fix
 
             $message = "Attachment size is too large.";
             $this->fail();
@@ -361,8 +360,7 @@ class Email implements ShouldQueue
             $this->entityEmailFailed($message);
 
             return;
-        } 
-        catch (\Exception | \RuntimeException $e) {
+        } catch (\Exception|\RuntimeException $e) {
             nlog("Mailer failed with {$e->getMessage()}");
             $message = $e->getMessage();
 
@@ -539,7 +537,7 @@ class Email implements ShouldQueue
 
     private function setHostedSesMailer()
     {
-                
+
         if (property_exists($this->email_object->settings, 'email_from_name') && strlen($this->email_object->settings->email_from_name) > 1) {
             $email_from_name = $this->email_object->settings->email_from_name;
         } else {
@@ -574,7 +572,7 @@ class Email implements ShouldQueue
     {
 
         /** Force free/trials onto specific mail driver */
-        if ($this->email_object->settings->email_sending_method == 'default' && (!$this->company->account->isPaid() || $this->company->account->isNewHostedAccount())) {
+        if (Ninja::isHosted() && $this->email_object->settings->email_sending_method == 'default' && (!$this->company->account->isPaid() || $this->company->account->isNewHostedAccount())) {
             $this->mailer = 'mailgun';
             $this->setHostedMailgunMailer();
             return $this;
@@ -588,8 +586,8 @@ class Email implements ShouldQueue
                 $email = $address_object->address ?? '';
                 $domain = explode("@", $email)[1] ?? "";
                 $dns = dns_get_record($domain, DNS_MX);
-                $server = $dns[0]["target"];
-                if (stripos($server, "outlook.com") !== false) {
+
+                if (is_array($dns) && isset($dns[0]["target"]) && stripos($dns[0]["target"], "outlook.com") !== false) {
 
                     if (property_exists($this->email_object->settings, 'email_from_name') && strlen($this->email_object->settings->email_from_name) > 1) {
                         $email_from_name = $this->email_object->settings->email_from_name;
@@ -605,8 +603,9 @@ class Email implements ShouldQueue
                     return $this;
 
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 nlog("problem switching outlook driver - hosted");
+                nlog($email);
                 nlog($e->getMessage());
             }
         }
@@ -671,16 +670,16 @@ class Email implements ShouldQueue
         $company = $this->company;
 
         $smtp_host = $company->smtp_host ?? '';
-        $smtp_port = (int)$company->smtp_port ?? 0; //@phpstan-ignore-line
+        $smtp_port = (int) $company->smtp_port ?? 0; //@phpstan-ignore-line
         $smtp_username = $company->smtp_username ?? '';
         $smtp_password = $company->smtp_password ?? '';
         $smtp_encryption = $company->smtp_encryption ?? 'tls';
         $smtp_local_domain = strlen($company->smtp_local_domain ?? '') > 2 ? $company->smtp_local_domain : null;
         $smtp_verify_peer = $company->smtp_verify_peer ?? true;
 
-        if (strlen($smtp_host) <= 1 ||
-        strlen($smtp_username) <= 1 ||
-        strlen($smtp_password) <= 1
+        if (strlen($smtp_host) <= 1
+        || strlen($smtp_username) <= 1
+        || strlen($smtp_password) <= 1
         ) {
             $this->email_object->settings->email_sending_method = 'default';
             return $this->setMailDriver();
@@ -690,7 +689,7 @@ class Email implements ShouldQueue
             'mail.mailers.smtp' => [
                 'transport' => 'smtp',
                 'host' => $smtp_host,
-                'port' => (int)$smtp_port,
+                'port' => (int) $smtp_port,
                 'username' => $smtp_username,
                 'password' => $smtp_password,
                 'encryption' => $smtp_encryption,
@@ -800,7 +799,7 @@ class Email implements ShouldQueue
         $this->client_ses_secret = 'true';
 
         $user = $this->resolveSendingUser();
-    
+
         $sending_user = (isset($this->email_object->settings->email_from_name) && strlen($this->email_object->settings->email_from_name) > 2) ? $this->email_object->settings->email_from_name : $user->name();
 
         $this->mailable
@@ -1001,7 +1000,7 @@ class Email implements ShouldQueue
                         'client_secret' => config('ninja.o365.client_secret'),
                         'scope' => 'email Mail.Send offline_access profile User.Read openid',
                         'grant_type' => 'refresh_token',
-                        'refresh_token' => $user->oauth_user_refresh_token
+                        'refresh_token' => $user->oauth_user_refresh_token,
                     ],
                 ])->getBody()->getContents());
             } catch (\Exception $e) {

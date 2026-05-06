@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -61,7 +61,7 @@ class ProductExport extends BaseExport
         return array_merge(['columns' => $header], $report);
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -83,6 +83,7 @@ class ProductExport extends BaseExport
         }
 
         $query = $this->addDateRange($query, 'products');
+        $query = $this->filterByUserPermissions($query);
 
         if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
@@ -98,7 +99,7 @@ class ProductExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
@@ -114,7 +115,7 @@ class ProductExport extends BaseExport
         return $this->csv->toString();
     }
 
-    private function buildRow(Product $product): array
+    protected function buildRow(Product $product): array
     {
         $transformed_entity = $this->entity_transformer->transform($product);
 

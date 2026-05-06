@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -37,9 +37,7 @@ class EpcQrGenerator
 
     // ];
 
-    public function __construct(protected Company $company, protected Invoice|RecurringInvoice $invoice, protected float $amount)
-    {
-    }
+    public function __construct(protected Company $company, protected Invoice|RecurringInvoice $invoice, protected float $amount) {}
 
     public function getQrCode()
     {
@@ -58,7 +56,7 @@ class EpcQrGenerator
           <rect x='0' y='0' width='100%'' height='100%' />{$qr}</svg>");
 
         } catch (\Throwable $e) {
-            nlog("EPC QR failure => ".$e->getMessage());
+            nlog("EPC QR failure => " . $e->getMessage());
             return '';
         }
 
@@ -67,10 +65,16 @@ class EpcQrGenerator
     public function encodeMessage()
     {
 
+        $name = $this->company->present()->name();
+
         if (isset($this->company->e_invoice->Invoice->PaymentMeans) && ($pm = $this->company->e_invoice->Invoice->PaymentMeans[0] ?? false) && in_array($pm->PaymentMeansCode->value, ['30', '58'])) {
 
             $iban = $pm->PayeeFinancialAccount->ID->value;
             $bic = $pm->PayeeFinancialAccount->FinancialInstitutionBranch->FinancialInstitution->ID->value ?? '';
+
+            if (isset($pm->PayeeFinancialAccount->Name) && strlen($pm->PayeeFinancialAccount->Name ?? '') > 0) {
+                $name = $pm->PayeeFinancialAccount->Name;
+            }
 
         } else {
 
@@ -85,11 +89,11 @@ class EpcQrGenerator
             '1', // Encoding: 1 = UTF-8
             'SCT', // Service Tag: SEPA Credit Transfer
             $bic, // BIC
-            $this->company->present()->name(), // Name of the beneficiary
+            $name, // Recipient Name - Account Name
             $iban, // IBAN
             $this->formatMoney($this->amount), // Amount with EUR prefix
             '', // Reference
-            substr(($this->invoice->number ?? ''), 0, 34) // Unstructured remittance information
+            substr(($this->invoice->number ?? ''), 0, 34), // Unstructured remittance information
         ];
 
         return implode("\n", $data);

@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateProjectsIndex implements MigrationInterface
 {
@@ -13,6 +14,15 @@ final class CreateProjectsIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+        
+        $indexExistsResponse = $client->indices()->exists(['index' => 'projects']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
+
         $mapping = [
             'properties' => [
                 // Core project fields
@@ -32,7 +42,7 @@ final class CreateProjectsIndex implements MigrationInterface
                 'task_rate' => ['type' => 'float'],
                 'due_date' => ['type' => 'date'],
                 'start_date' => ['type' => 'date'],
-                
+                'current_hours' => ['type' => 'float'],
                 // Custom fields
                 'custom_value1' => ['type' => 'keyword'],
                 'custom_value2' => ['type' => 'keyword'],
@@ -41,8 +51,6 @@ final class CreateProjectsIndex implements MigrationInterface
                 
                 // Additional fields
                 'company_key' => ['type' => 'keyword'],
-                'client_id' => ['type' => 'keyword'],
-                'assigned_user_id' => ['type' => 'keyword'],
                 'private_notes' => [
                     'type' => 'text',
                     'analyzer' => 'standard'
@@ -54,7 +62,7 @@ final class CreateProjectsIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('projects_v2', $mapping);
+        Index::createRaw('projects', $mapping);
     }
 
     /**
@@ -62,6 +70,6 @@ final class CreateProjectsIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('projects_v2');
+        Index::dropIfExists('projects');
     }
 }

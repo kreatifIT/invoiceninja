@@ -5,28 +5,29 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Services\Client;
 
-use App\Utils\Number;
+use App\Factory\InvoiceItemFactory;
 use App\Models\Client;
 use App\Models\Credit;
 use App\Models\Design;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\Pdf\Purify;
+use App\Utils\HostedPDF\NinjaPdf;
 use App\Utils\HtmlEngine;
-use Illuminate\Support\Carbon;
-use App\Utils\Traits\MakesHash;
+use App\Utils\Number;
 use App\Utils\PhantomJS\Phantom;
 use App\Utils\Traits\MakesDates;
-use App\Utils\HostedPDF\NinjaPdf;
+use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\Pdf\PdfMaker;
-use App\Factory\InvoiceItemFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 class Statement
 {
@@ -39,9 +40,7 @@ class Statement
 
     private array $variables = [];
 
-    public function __construct(protected Client $client, public array $options)
-    {
-    }
+    public function __construct(protected Client $client, public array $options) {}
 
     public function run(): ?string
     {
@@ -96,7 +95,7 @@ class Statement
                 'payments' => $this->getPayments()->cursor(),
                 'credits' => $this->getCredits()->cursor(),
                 'aging' => $this->getAging(),
-                'unapplied' => $this->getUnapplied()->cursor()
+                'unapplied' => $this->getUnapplied()->cursor(),
             ];
 
             $ps = new \App\Services\Pdf\PdfService($invitation, 'statement', array_merge($options, $this->options));
@@ -109,7 +108,7 @@ class Statement
 
             $ps->designer = (new \App\Services\Pdf\PdfDesigner($ps))->build();
 
-            $ps->designer->buildFromPartials((array)$ps->config->design->design);
+            $ps->designer->buildFromPartials((array) $ps->config->design->design);
 
             $ps->builder = (new \App\Services\Pdf\PdfBuilder($ps))->build();
 
@@ -118,7 +117,7 @@ class Statement
             return $pdf;
 
         } catch (\Throwable $th) {
-            nlog("Statement threw => ". $th->getMessage());
+            nlog("Statement threw => " . $th->getMessage());
         }
 
         return null;
@@ -158,7 +157,7 @@ class Statement
             $ts->addGlobal(['show_credits' => $this->options['show_credits_table']]);
             $ts->addGlobal(['show_aging' => $this->options['show_aging_table']]);
             $ts->addGlobal(['show_payments' => $this->options['show_payments_table']]);
-            $ts->addGlobal(['currency_code' => $this->client->company->currency()->code]);
+            $ts->addGlobal(['currency_code' => $this->client->currency()->code]);
 
             $ts->build([
                 'variables' => collect([$variables]),
@@ -172,7 +171,7 @@ class Statement
             $html = $ts->getHtml();
         }
 
-        return $this->convertToPdf($html);
+        return $this->convertToPdf(Purify::clean($html));
     }
 
     private function convertToPdf(string $html): mixed
@@ -460,10 +459,10 @@ class Statement
         if ($range == '0') {
             // $q->whereBetween('due_date', [$to, $from])->orWhereNull('due_date');
             $query->where(function ($q) use ($to, $from) {
-                $q->whereDate('due_date', '>=', now()->startOfDay())
+                $q->whereDate('due_date', '>=', now()->addDays(1)->startOfDay())
                   ->orWhere(function ($q2) use ($to, $from) {
                       $q2->whereNull('due_date')
-                      ->whereBetween('date', [$to,$from]);
+                      ->whereBetween('date', [$from, $to]);
                   });
             });
 

@@ -5,37 +5,57 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Requests\TaskScheduler;
 
+use App\Models\Design;
 use App\Http\Requests\Request;
+use Illuminate\Validation\Rule;
 use App\Http\ValidationRules\Scheduler\ValidClientIds;
 
 class UpdateSchedulerRequest extends Request
 {
     public array $client_statuses = [
-                        'all',
-                        'draft',
-                        'paid',
-                        'unpaid',
-                        'overdue',
-                        'pending',
-                        'invoiced',
-                        'logged',
-                        'partial',
-                        'applied',
-                        'active',
-                        'paused',
-                        'completed',
-                        'approved',
-                        'expired',
-                        'upcoming',
-                        'converted',
-                        'uninvoiced',
+        'all',
+        'draft',
+        'paid',
+        'unpaid',
+        'overdue',
+        'pending',
+        'invoiced',
+        'logged',
+        'partial',
+        'applied',
+        'active',
+        'paused',
+        'completed',
+        'approved',
+        'expired',
+        'upcoming',
+        'converted',
+        'uninvoiced',
+    ];
+
+    public array $templates = [
+        'invoice',
+        'quote',
+        'credit',
+        'purchase_order',
+        'quote',
+        'credit',
+        'purchase_order',
+        'invoice',
+        'reminder1',
+        'reminder2',
+        'reminder3',
+        'reminder_endless',
+        'custom1',
+        'custom2',
+        'custom3',
     ];
 
     /**
@@ -56,7 +76,7 @@ class UpdateSchedulerRequest extends Request
         $rules = [
             'name' => 'bail|sometimes|nullable|string',
             'is_paused' => 'bail|sometimes|boolean',
-            'frequency_id' => 'bail|sometimes|integer|digits_between:1,12',
+            'frequency_id' => 'bail|sometimes|integer|between:0,12',
             'next_run' => 'bail|required|date:Y-m-d|after_or_equal:today',
             'next_run_client' => 'bail|sometimes|date:Y-m-d',
             'template' => 'bail|required|string',
@@ -67,6 +87,7 @@ class UpdateSchedulerRequest extends Request
             'parameters.end_date' => ['bail', 'sometimes', 'date:Y-m-d', 'required_if:parameters.date_range,custom', 'after_or_equal:parameters.start_date'],
             'parameters.entity' => ['bail', 'sometimes', 'string', 'in:invoice,credit,quote,purchase_order'],
             'parameters.entity_id' => ['bail', 'sometimes', 'string'],
+            'parameters.group_by' => ['bail', 'sometimes', 'nullable', 'string'],
             'parameters.report_name' => ['bail','sometimes', 'string', 'required_if:template,email_report','in:vendor,purchase_order_item,purchase_order,ar_detailed,ar_summary,client_balance,tax_summary,profitloss,client_sales,user_sales,product_sales,activity,activities,client,clients,client_contact,client_contacts,credit,credits,document,documents,expense,expenses,invoice,invoices,invoice_item,invoice_items,quote,quotes,quote_item,quote_items,recurring_invoice,recurring_invoices,payment,payments,product,products,task,tasks'],
             'parameters.date_key' => ['bail','sometimes', 'string'],
             'parameters.status' => ['bail','sometimes', 'nullable', 'string'],
@@ -74,14 +95,27 @@ class UpdateSchedulerRequest extends Request
             'parameters.auto_send' => ['bail','sometimes', 'boolean', 'required_if:template,invoice_outstanding_tasks'],
             // 'parameters.invoice_id' => ['bail','sometimes', 'string', 'required_if:template,payment_schedule'],
             'parameters.auto_bill' => ['bail','sometimes', 'boolean', 'required_if:template,payment_schedule'],
+            'parameters.template' => ['bail', 'sometimes', 'nullable', 'string', Rule::in($this->templates)],
+
             'parameters.schedule' => ['bail', 'array', 'required_if:template,payment_schedule','min:1'],
             'parameters.schedule.*.id' => ['bail','sometimes', 'integer'],
             'parameters.schedule.*.date' => ['bail','sometimes', 'date:Y-m-d'],
             'parameters.schedule.*.amount' => ['bail','sometimes', 'numeric'],
             'parameters.schedule.*.is_amount' => ['bail','sometimes', 'boolean'],
+            'parameters.template_id' => ['bail','sometimes', 'string', 'nullable'],
         ];
 
         return $rules;
+    }
+
+
+    public function withValidator(\Illuminate\Validation\Validator $validator)
+    {
+        $validator->after(function ($validator) {
+            if (!empty($this->parameters['template_id']) && Design::where('id', $this->decodePrimaryKey($this->parameters['template_id']))->where('is_template', true)->company()->doesntExist()) {
+                $validator->errors()->add('template_id', 'Invalid Template ID Selected');
+            }
+        });
     }
 
     public function prepareForValidation()
@@ -100,10 +134,10 @@ class UpdateSchedulerRequest extends Request
             $input['parameters']['clients'] = [];
         }
 
-        if(isset($input['parameters']['invoice_id'])) {
+        if (isset($input['parameters']['invoice_id'])) {
             unset($input['parameters']['invoice_id']);
         }
-        
+
         if (isset($input['parameters']['status'])) {
 
 
@@ -119,10 +153,12 @@ class UpdateSchedulerRequest extends Request
                                                     })->merge($task_statuses)
                                                     ->implode(",") ?? '';
         }
-        
+
         if (isset($input['parameters']['schedule']) && is_array($input['parameters']['schedule']) && count($input['parameters']['schedule']) > 0) {
             $input['remaining_cycles'] = count($input['parameters']['schedule']);
         }
+
+        $input['parameters']['user_id'] = auth()->user()->id;
 
         $this->replace($input);
 
@@ -133,7 +169,7 @@ class UpdateSchedulerRequest extends Request
         return [
             'parameters.schedule.min' => 'The schedule must have at least one item.',
             'parameters.schedule' => 'You must have at least one schedule entry.',
-            'parameters.invoice_id' => 'You must select an invoice.'
+            'parameters.invoice_id' => 'You must select an invoice.',
         ];
     }
 

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -53,6 +53,11 @@ class ClientContactRepository extends BaseRepository
             return is_array($contact);
         })->map(function ($contact) {
             $contact['is_primary'] = $this->is_primary;
+
+            if ($this->is_primary) {
+                $contact['cc_only'] = false;
+            }
+
             $this->is_primary = false;
 
             if ($this->set_send_email_on_contact) {
@@ -85,7 +90,7 @@ class ClientContactRepository extends BaseRepository
 
             $update_contact->fill($contact);
 
-            if (array_key_exists('password', $contact) && strlen($contact['password']) > 1 && strlen($update_contact->email) > 3) { //updating on a blank contact email will cause large table scanning
+            if (array_key_exists('password', $contact) && strlen($contact['password'] ?? '') > 1 && strlen($update_contact->email ?? '') > 3) { //updating on a blank contact email will cause large table scanning
                 $update_contact->password = Hash::make($contact['password']);
 
                 ClientContact::withTrashed()

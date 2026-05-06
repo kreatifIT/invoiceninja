@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -87,6 +87,10 @@ class QuotesTable extends Component
 
             if (in_array('3', $this->status)) {
                 $query->whereIn('status_id', [Quote::STATUS_APPROVED, Quote::STATUS_CONVERTED]);
+            }
+
+            if (in_array('5', $this->status)) {
+                $query->where('status_id', Quote::STATUS_REJECTED);
             }
         }
 

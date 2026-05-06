@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -80,9 +80,7 @@ class LivewireInstantPayment
      * @param  array $data
      * @return void
      */
-    public function __construct(public array $data)
-    {
-    }
+    public function __construct(public array $data) {}
 
     public function run()
     {
@@ -164,7 +162,9 @@ class LivewireInstantPayment
         * by adding it as a line item, and then subtract
         * the starting and finishing amounts of the invoice.
         */
-        $fee_totals = $first_invoice->balance - $starting_invoice_amount;
+        // $fee_totals = $first_invoice->balance - $starting_invoice_amount;
+
+        $fee_totals = round(($first_invoice->balance - $starting_invoice_amount), $client->currency()->precision);
 
         if ($company_gateway) {
             $tokens = $client->gateway_tokens()
@@ -181,7 +181,7 @@ class LivewireInstantPayment
         $hash_data = [
             'invoices' => $payable_invoices->toArray(),
             'credits' => $credit_totals,
-            'amount_with_fee' => max(0, (($invoice_totals + $fee_totals) - $credit_totals)),
+            'amount_with_fee' => round(max(0, (($invoice_totals + $fee_totals) - $credit_totals)), $client->currency()->precision),
             'pre_payment' => $this->data['pre_payment'],
             'frequency_id' => $this->data['frequency_id'],
             'remaining_cycles' => $this->data['remaining_cycles'],

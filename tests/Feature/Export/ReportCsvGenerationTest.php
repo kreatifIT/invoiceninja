@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -32,10 +33,11 @@ use App\Utils\Traits\MakesHash;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Http;
 use League\Csv\Reader;
+use League\Csv\ResultSet;
 use Tests\TestCase;
 
 /**
- * 
+ *
  */
 class ReportCsvGenerationTest extends TestCase
 {
@@ -192,9 +194,10 @@ class ReportCsvGenerationTest extends TestCase
      */
     private function buildData()
     {
-        if($this->account)
+        if ($this->account) {
             $this->account->forceDelete();
-        
+        }
+
         /** @var \App\Models\Account $account */
         $this->account = Account::factory()->create([
             'hosted_client_count' => 1000,
@@ -308,6 +311,30 @@ class ReportCsvGenerationTest extends TestCase
 
     }
 
+    public function testFilterByUserPermissionsWithoutUserId()
+    {
+        Invoice::factory()->count(3)->create([
+            'client_id' => $this->client->id,
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        $export = new \App\Export\CSV\InvoiceExport($this->company, [
+            'date_range' => 'all',
+            'report_keys' => [],
+            'send_email' => false,
+            'include_deleted' => false,
+            'client_id' => null,
+            'status' => null,
+        ]);
+
+        $query = $export->init();
+
+        $this->assertGreaterThanOrEqual(3, $query->count());
+
+        $this->account->forceDelete();
+    }
+
     public function testForcedInsertionOfMandatoryColumns()
     {
         $forced = ['client.name'];
@@ -322,7 +349,7 @@ class ReportCsvGenerationTest extends TestCase
 
         $this->assertEquals('client.name', $array[2]); //@phpstan-ignore-line
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -345,7 +372,7 @@ $this->account->forceDelete();
 
         $products = explode(",", "clown,joker,batman,bob the builder");
 
-        foreach($products as $product) {
+        foreach ($products as $product) {
             $query->where(function ($q) use ($product) {
                 $q->orWhereJsonContains('line_items', ['product_key' => $product]);
             });
@@ -369,7 +396,7 @@ $this->account->forceDelete();
         );
 
         $query->where(function ($q) use ($products) {
-            foreach($products as $product) {
+            foreach ($products as $product) {
                 $q->orWhereJsonContains('line_items', ['product_key' => $product]);
             }
         });
@@ -399,7 +426,7 @@ $this->account->forceDelete();
         $query = Invoice::query();
 
         $query->where(function ($q) use ($products) {
-            foreach($products as $product) {
+            foreach ($products as $product) {
                 $q->orWhereJsonContains('line_items', ['product_key' => $product]);
             }
         });
@@ -415,7 +442,7 @@ $this->account->forceDelete();
         $this->assertEquals(1, $query->count());
 
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -476,7 +503,7 @@ $this->account->forceDelete();
 
         $this->assertEquals(1, $q->count());
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -540,6 +567,7 @@ $this->account->forceDelete();
             'report_keys' => [],
             'send_email' => false,
             'include_deleted' => false,
+            'user_id' => $this->user->id,
             // 'status' => 'sometimes|string|nullable|in:all,draft,sent,viewed,paid,unpaid,overdue',
         ];
 
@@ -555,9 +583,9 @@ $this->account->forceDelete();
         $this->assertEquals('address1', $this->traverseJson($data, '0.0.value'));
         $this->assertEquals('vendor.address1', $this->traverseJson($data, '0.0.identifier'));
         $this->assertEquals('address1', $this->traverseJson($data, '0.0.display_value'));
-    
-    
-$this->account->forceDelete();
+
+
+        $this->account->forceDelete();
 
     }
 
@@ -591,6 +619,7 @@ $this->account->forceDelete();
             'report_keys' => ["vendor.name", "vendor.city", "vendor.number"],
             'send_email' => false,
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -628,7 +657,7 @@ $this->account->forceDelete();
         $this->assertEquals('Vendor 1', $this->traverseJson($data, '0.0.display_value'));
         $this->assertEquals('number', $this->traverseJson($data, '0.2.id'));
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -668,9 +697,9 @@ $this->account->forceDelete();
             ]);
 
 
-            $repo = new InvoiceRepository();
-            $invoice = $repo->save([], $invoice);
-            
+        $repo = new InvoiceRepository();
+        $invoice = $repo->save([], $invoice);
+
         $log =  '[[1689547165,1689550765,"sumtin",true]]';
 
         \App\Models\Task::factory()->create([
@@ -703,6 +732,7 @@ $this->account->forceDelete();
             ],
             'send_email' => false,
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -751,6 +781,7 @@ $this->account->forceDelete();
             'date_range' => 'all',
             'report_keys' => $this->all_client_report_keys,
             'send_email' => false,
+            'user_id' => $this->user->id,
         ];
 
 
@@ -781,7 +812,7 @@ $this->account->forceDelete();
 
         $csv = $response->body();
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
 
     }
@@ -837,7 +868,7 @@ $this->account->forceDelete();
         $this->assertEquals('Custom 3', $this->getFirstValueByColumn($csv, 'Task Custom Value 3'));
         $this->assertEquals('Custom 4', $this->getFirstValueByColumn($csv, 'Task Custom Value 4'));
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -862,6 +893,7 @@ $this->account->forceDelete();
             'report_keys' => [],
             'send_email' => false,
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -903,7 +935,7 @@ $this->account->forceDelete();
         $this->assertEquals('custom_value1', $this->traverseJson($data, '0.0.identifier'));
         $this->assertEquals('Custom 1', $this->traverseJson($data, '0.0.display_value'));
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -945,9 +977,9 @@ $this->account->forceDelete();
         $invoice->client->paid_to_date = 0;
         $invoice->push();
 
-        
-$repo = new InvoiceRepository();
-$invoice = $repo->save([], $invoice);
+
+        $repo = new InvoiceRepository();
+        $invoice = $repo->save([], $invoice);
 
 
         $invoice->service()->markPaid()->save();
@@ -965,6 +997,7 @@ $invoice = $repo->save([], $invoice);
             ],
             'send_email' => false,
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -1017,6 +1050,7 @@ $invoice = $repo->save([], $invoice);
             'date_range' => 'all',
             'report_keys' => $this->all_client_report_keys,
             'send_email' => false,
+            'user_id' => $this->user->id,
         ];
 
 
@@ -1031,6 +1065,7 @@ $invoice = $repo->save([], $invoice);
             'date_range' => 'all',
             'report_keys' => array_merge(["payment.amount","payment.date"], $this->all_invoice_report_keys),
             'send_email' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -1049,7 +1084,7 @@ $invoice = $repo->save([], $invoice);
         $csv = $response->body();
 
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1070,6 +1105,7 @@ $this->account->forceDelete();
             'date_range' => 'all',
             'report_keys' => [],
             'send_email' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -1094,7 +1130,7 @@ $this->account->forceDelete();
         $this->assertEquals('2020-01-01', $this->getFirstValueByColumn($csv, 'Payment Date'));
         $this->assertEquals('1234', $this->getFirstValueByColumn($csv, 'Payment Transaction Reference'));
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1123,20 +1159,20 @@ $this->account->forceDelete();
 
         $csv = $response->body();
 
-        $reader = Reader::createFromString($csv);
+        $reader = Reader::fromString($csv);
         $reader->setHeaderOffset(0);
 
-        $res = $reader->fetchColumnByName('Street');
+        $res = ResultSet::from($reader)->fetchColumn('Street');
         $res = iterator_to_array($res, true);
 
         $this->assertEquals('1234', $res[1]);
 
-        $res = $reader->fetchColumnByName('Name');
+        $res = ResultSet::from($reader)->fetchColumn('Name');
         $res = iterator_to_array($res, true);
 
         $this->assertEquals('bob', $res[1]);
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1277,7 +1313,7 @@ $this->account->forceDelete();
         $response = $this->poll($hash);
         $csv = $response->body();
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1313,9 +1349,9 @@ $this->account->forceDelete();
             ]
        ]);
 
-       $repo = new InvoiceRepository();
-            $invoice = $repo->save([], $invoice);
-            
+        $repo = new InvoiceRepository();
+        $invoice = $repo->save([], $invoice);
+
 
         $data = [
             'date_range' => 'all',
@@ -1361,7 +1397,7 @@ $this->account->forceDelete();
             'X-API-TOKEN' => $this->token,
         ])->post('/api/v1/reports/invoices', $data)->assertStatus(200);
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1417,7 +1453,7 @@ $this->account->forceDelete();
             'X-API-TOKEN' => $this->token,
         ])->post('/api/v1/reports/recurring_invoices', $data)->assertStatus(200);
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1466,7 +1502,7 @@ $this->account->forceDelete();
         $this->assertEquals('Daily', $this->getFirstValueByColumn($csv, 'Recurring Invoice How Often'));
         $this->assertEquals('Active', $this->getFirstValueByColumn($csv, 'Recurring Invoice Status'));
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1507,8 +1543,8 @@ $this->account->forceDelete();
            ]
        ]);
 
-$repo = new InvoiceRepository();
-$invoice = $repo->save([], $invoice);
+        $repo = new InvoiceRepository();
+        $invoice = $repo->save([], $invoice);
 
         $data = [
             'date_range' => 'all',
@@ -1579,7 +1615,7 @@ $invoice = $repo->save([], $invoice);
             'X-API-TOKEN' => $this->token,
         ])->postJson('/api/v1/reports/invoice_items', $data)->assertStatus(200);
 
-$this->account->forceDelete();
+        $this->account->forceDelete();
 
     }
 
@@ -1725,7 +1761,7 @@ $this->account->forceDelete();
         $this->assertEquals('Public', $this->getFirstValueByColumn($csv, 'Purchase Order Public Notes'));
         $this->assertEquals('Private', $this->getFirstValueByColumn($csv, 'Purchase Order Private Notes'));
         $this->assertEquals('Terms', $this->getFirstValueByColumn($csv, 'Purchase Order Terms'));
-    
+
         $this->account->forceDelete();
 
     }
@@ -1911,10 +1947,10 @@ $this->account->forceDelete();
             ]
        ]);
 
-       $repo = new InvoiceRepository();
-            $invoice = $repo->save([], $invoice);
-            
-            
+        $repo = new InvoiceRepository();
+        $invoice = $repo->save([], $invoice);
+
+
         $invoice->service()->markPaid()->save();
 
         $data = [
@@ -1972,20 +2008,20 @@ $this->account->forceDelete();
         $csv = $response->body();
 
 
-        $reader = Reader::createFromString($csv);
+        $reader = Reader::fromString($csv);
         $reader->setHeaderOffset(0);
 
-        $res = $reader->fetchColumnByName('Contact First Name');
+        $res = ResultSet::from($reader)->fetchColumn('Contact First Name');
         $res = iterator_to_array($res, true);
 
         $this->assertEquals('john', $res[1]);
 
-        $res = $reader->fetchColumnByName('Contact Last Name');
+        $res = ResultSet::from($reader)->fetchColumn('Contact Last Name');
         $res = iterator_to_array($res, true);
 
         $this->assertEquals('doe', $res[1]);
 
-        $res = $reader->fetchColumnByName('Contact Email');
+        $res = ResultSet::from($reader)->fetchColumn('Contact Email');
         $res = iterator_to_array($res, true);
 
         $this->assertEquals('john@doe.com', $res[1]);
@@ -2003,10 +2039,10 @@ $this->account->forceDelete();
 
     private function getFirstValueByColumn($csv, $column)
     {
-        $reader = Reader::createFromString($csv);
+        $reader = Reader::fromString($csv);
         $reader->setHeaderOffset(0);
 
-        $res = $reader->fetchColumnByName($column);
+        $res = ResultSet::from($reader)->fetchColumn($column);
         $res = iterator_to_array($res, true);
 
         return $res[1];
@@ -2457,6 +2493,75 @@ $this->account->forceDelete();
 
         $this->account->forceDelete();
 
+    }
+
+    public function testSurchargeCustomLabelsInCsvHeader()
+    {
+        $custom_fields = new \stdClass();
+        $custom_fields->surcharge1 = 'Freight|number';
+        $custom_fields->surcharge2 = 'Handling Fee|number';
+        $this->company->custom_fields = $custom_fields;
+        $this->company->save();
+
+        Invoice::factory()->create([
+            'client_id' => $this->client->id,
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'custom_surcharge1' => 10.00,
+            'custom_surcharge2' => 5.00,
+        ]);
+
+        $data = [
+            'date_range' => 'all',
+            'report_keys' => ['invoice.number', 'invoice.custom_surcharge1', 'invoice.custom_surcharge2'],
+            'send_email' => false,
+            'include_deleted' => false,
+        ];
+
+        $export = new \App\Export\CSV\InvoiceExport($this->company, $data);
+        $csv = $export->run();
+
+        $reader = Reader::fromString($csv);
+        $reader->setHeaderOffset(0);
+        $header = $reader->getHeader();
+
+        $this->assertContains('Freight', $header);
+        $this->assertContains('Handling Fee', $header);
+        $this->assertNotContains('Custom Surcharge 1', $header);
+        $this->assertNotContains('Custom Surcharge 2', $header);
+
+        $this->account->forceDelete();
+    }
+
+    public function testSurchargeDefaultLabelsWhenNoCustomLabel()
+    {
+        $this->company->custom_fields = new \stdClass();
+        $this->company->save();
+
+        Invoice::factory()->create([
+            'client_id' => $this->client->id,
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'custom_surcharge1' => 10.00,
+        ]);
+
+        $data = [
+            'date_range' => 'all',
+            'report_keys' => ['invoice.number', 'invoice.custom_surcharge1'],
+            'send_email' => false,
+            'include_deleted' => false,
+        ];
+
+        $export = new \App\Export\CSV\InvoiceExport($this->company, $data);
+        $csv = $export->run();
+
+        $reader = Reader::fromString($csv);
+        $reader->setHeaderOffset(0);
+        $header = $reader->getHeader();
+
+        $this->assertContains('Invoice Custom Surcharge 1', $header);
+
+        $this->account->forceDelete();
     }
 
 

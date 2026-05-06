@@ -5,6 +5,7 @@ use Elastic\Adapter\Indices\Mapping;
 use Elastic\Adapter\Indices\Settings;
 use Elastic\Migrations\Facades\Index;
 use Elastic\Migrations\MigrationInterface;
+use Elastic\Elasticsearch\ClientBuilder;
 
 final class CreateVendorsIndex implements MigrationInterface
 {
@@ -13,6 +14,16 @@ final class CreateVendorsIndex implements MigrationInterface
      */
     public function up(): void
     {
+        // Check if index already exists (idempotency)
+        $client = ClientBuilder::fromConfig(config('elastic.client.connections.default'));
+        
+        $indexExistsResponse = $client->indices()->exists(['index' => 'vendors']);
+        if ($indexExistsResponse->getStatusCode() === 200) {
+            return;
+        }
+
+
+
         $mapping = [
             'properties' => [
                 // Core vendor fields
@@ -59,7 +70,7 @@ final class CreateVendorsIndex implements MigrationInterface
             ]
         ];
 
-        Index::createRaw('vendors_v2', $mapping);
+        Index::createRaw('vendors', $mapping);
     }
 
     /**
@@ -67,6 +78,6 @@ final class CreateVendorsIndex implements MigrationInterface
      */
     public function down(): void
     {
-        Index::dropIfExists('vendors_v2');
+        Index::dropIfExists('vendors');
     }
 }

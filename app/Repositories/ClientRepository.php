@@ -5,19 +5,22 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Repositories;
 
-use App\Factory\ClientFactory;
 use App\Models\Client;
 use App\Models\Company;
-use App\Utils\Traits\GeneratesCounter;
+use App\Models\Location;
+use App\Models\ClientContact;
+use App\Factory\ClientFactory;
 use App\Utils\Traits\SavesDocuments;
+use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Database\QueryException;
+use App\Jobs\Client\PurgeClientDocuments;
 
 /**
  * ClientRepository.
@@ -155,10 +158,13 @@ class ClientRepository extends BaseRepository
 
         $event_vars = \App\Utils\Ninja::eventVars(auth()->user() ? auth()->user()->id : null);
         $event_vars['client_hash'] = $purged_client_hash;
-        
+
         event(new \App\Events\Client\ClientWasPurged($purged_client, $user, $company, $event_vars));
 
         nlog("Purging client id => {$client->id} => {$client->number}");
+
+        // Delete documents associated with client's related entities before deleting the entities
+        $this->purgeClientDocuments($client);
 
         $client->contacts()->forceDelete();
         $client->tasks()->forceDelete();
@@ -173,8 +179,75 @@ class ClientRepository extends BaseRepository
         $client->expenses()->forceDelete();
         $client->recurring_expenses()->forceDelete();
         $client->system_logs()->forceDelete();
-        $client->documents()->forceDelete();
+        // $client->documents()->forceDelete();
         $client->payments()->forceDelete();
+
+        $client->unsearchable();
+
         $client->forceDelete();
     }
+
+    /**
+     * Purge all documents associated with client's related entities.
+     * This ensures documents attached to invoices, quotes, payments, etc. are also deleted.
+     */
+    private function purgeClientDocuments($client)
+    {
+        // Get all entity IDs that belong to this client
+        $data = [
+            'invoices' => $client->invoices()->pluck('id')->toArray(),
+            'App\Models\Quote' => $client->quotes()->pluck('id')->toArray(),
+            'App\Models\Payment' => $client->payments()->pluck('id')->toArray(),
+            'App\Models\Credit' => $client->credits()->pluck('id')->toArray(),
+            'App\Models\Expense' => $client->expenses()->pluck('id')->toArray(),
+            'App\Models\RecurringInvoice' => $client->recurring_invoices()->pluck('id')->toArray(),
+            'App\Models\RecurringExpense' => $client->recurring_expenses()->pluck('id')->toArray(),
+            'App\Models\Project' => $client->projects()->pluck('id')->toArray(),
+            'App\Models\Task' => $client->tasks()->pluck('id')->toArray(),
+            'App\Models\Client' => [$client->id],
+        ];
+
+        PurgeClientDocuments::dispatch($data, $client->company);
+
+    }
+
+    /**
+     * clone/duplicate a client
+     *
+     * @param  Client $client
+     * @return Client
+     */
+    public function clone(Client $client)
+    {
+        $clone_client = $client->replicate();
+        $clone_client->name = $clone_client->name . ' clone ' . date('Y-m-d H:i:s');
+        $clone_client->client_hash = \Illuminate\Support\Str::random(40);
+        $clone_client->sync = null;
+        $clone_client->number = null;
+        $clone_client->id_number = null;
+        $clone_client->balance = 0;
+        $clone_client->paid_to_date = 0;
+        $clone_client->credit_balance = 0;
+        $clone_client->payment_balance = 0;
+        $clone_client->save();
+
+        $clone_client->service()->applyNumber()->save();
+
+        $client->contacts->each(function (ClientContact $contact) use ($clone_client) {
+            $clone_contact = $contact->replicate();
+            $clone_contact->client_id = $clone_client->id;
+            $clone_contact->contact_key = \Illuminate\Support\Str::random(32);
+            $clone_contact->save();
+        });
+
+        $client->locations->each(function (Location $location) use ($clone_client) {
+            $clone_location = $location->replicate();
+            $clone_location->client_id = $clone_client->id;
+            $clone_location->save();
+        });
+
+        return $clone_client;
+    }
+
+
 }

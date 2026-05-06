@@ -39,7 +39,7 @@ class CreateRawPdf
     use MakesHash;
     use PageNumbering;
 
-    public Invoice | Credit | Quote | RecurringInvoice | PurchaseOrder $entity;
+    public Invoice|Credit|Quote|RecurringInvoice|PurchaseOrder $entity;
 
     public \App\Models\Company $company;
 
@@ -54,6 +54,9 @@ class CreateRawPdf
      */
     public function __construct($invitation, private ?string $type = null)
     {
+        if ($invitation === null) {
+            throw new \InvalidArgumentException('CreateRawPdf requires an invitation, got null. Ensure the entity has invitations before generating a PDF.');
+        }
 
         $this->invitation = $invitation;
         $this->company = $invitation->company;
@@ -85,7 +88,7 @@ class CreateRawPdf
 
         $type = 'product';
 
-        match($this->entity_string) {
+        match ($this->entity_string) {
             'purchase_order' => $type = 'purchase_order',
             'invoice' => $type = 'product',
             'quote' => $type = 'product',
@@ -100,6 +103,26 @@ class CreateRawPdf
 
     public function handle()
     {
+
+        /** Serve DocuNinja signed PDF if signing is complete */
+        if (in_array($this->entity_string, ['invoice', 'quote', 'purchase_order'])
+           && $this->company->docuninjaActive()
+           && $this->entity->sync?->dn_completed
+        ) {
+            $document = $this->entity->getSignedPdfDocument();
+
+            if ($document) {
+                try {
+                    $pdf = $document->getFile();
+
+                    if ($pdf && strlen($pdf) > 0) {
+                        return $pdf;
+                    }
+                } catch (\Exception $e) {
+                    nlog("Failed to retrieve signed PDF for {$this->entity_string} {$this->entity->id}: " . $e->getMessage());
+                }
+            }
+        }
 
         $pdf = $this->generatePdf();
 
@@ -147,14 +170,21 @@ class CreateRawPdf
             $pdf = $ps->boot()->getPdf();
         } catch (\Throwable $e) {
             nlog($e->getMessage());
-            throw new FilePermissionsFailure('Unable to generate the raw PDF => '.$e->getMessage());
+            throw new FilePermissionsFailure('Unable to generate the raw PDF => ' . $e->getMessage());
         }
 
         if ($this->entity_string == "invoice" && $this->entity->client->getSetting("merge_e_invoice_to_pdf")) {
             $pdf = (new MergeEDocument($this->entity, $pdf))->handle();
         }
 
-        $merge_docs = isset($this->entity->client) ? $this->entity->client->getSetting('embed_documents') : $this->company->getSetting('embed_documents');
+        // Prefer the resolved settings on PdfService (which may have been
+        // overridden by a JSON design's documentSettings.embedDocuments) over
+        // the raw client/company merged settings.
+        $merge_docs = isset($ps->config->settings->embed_documents)
+            ? (bool) $ps->config->settings->embed_documents
+            : (isset($this->entity->client)
+                ? $this->entity->client->getSetting('embed_documents')
+                : $this->company->getSetting('embed_documents'));
 
         if ($merge_docs && ($this->entity->documents()->where('is_public', true)->count() > 0 || $this->company->documents()->where('is_public', true)->count() > 0)) {
             $pdf = $this->entity->documentMerge($pdf);

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -54,9 +54,7 @@ class BulkInvoiceJob implements ShouldQueue
         'email_template_purchase_order',
     ];
 
-    public function __construct(public array $invoice_ids, public string $db, public string $reminder_template)
-    {
-    }
+    public function __construct(public array $invoice_ids, public string $db, public string $reminder_template) {}
 
     /**
      * Execute the job.
@@ -69,17 +67,23 @@ class BulkInvoiceJob implements ShouldQueue
         MultiDB::setDb($this->db);
 
         Invoice::with([
-                'invitations',
-                'invitations.contact.client.country',
-                'invitations.invoice.client.country',
-                'invitations.invoice.company'
-                ])
+            'invitations',
+            'invitations.contact.client.country',
+            'invitations.invoice.client.country',
+            'invitations.invoice.company',
+        ])
                 ->withTrashed()
                 ->whereIn('id', $this->invoice_ids)
                 ->cursor()
                 ->each(function ($invoice) {
 
                     $invoice->service()->markSent()->save();
+
+                    if ($invoice->company->verifactuEnabled() && !$invoice->hasSentAeat()) {
+                        $invoice->invitations()->update(['email_error' => 'primed']); // Flag the invitations as primed for AEAT submission
+                        $invoice->service()->sendVerifactu();
+                        return false;
+                    }
 
                     $invoice->invitations->each(function ($invitation) {
 

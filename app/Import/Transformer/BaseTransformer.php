@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2025. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,6 +25,7 @@ use App\Models\Invoice;
 use App\Models\PaymentType;
 use App\Models\Product;
 use App\Models\Project;
+use App\Models\PurchaseOrder;
 use App\Models\Quote;
 use App\Models\RecurringInvoice;
 use App\Models\TaxRate;
@@ -51,7 +52,12 @@ class BaseTransformer
     public function parseDate($date)
     {
         if (stripos($date, "/") !== false && $this->company->settings->country_id != 840) {
-            $date = str_replace('/', '-', $date);
+            try {
+                $parsed_date = Carbon::createFromFormat('d/m/Y', $date);
+                return $parsed_date->format('Y-m-d');
+            } catch (\Exception $e) {
+                // Fall through to general parsing
+            }
         }
 
         try {
@@ -100,12 +106,12 @@ class BaseTransformer
 
     public function getInvoiceTypeId($data, $field, $default = '1')
     {
-        return isset($data[$field]) && $data[$field] ? (string)$data[$field] : $default;
+        return isset($data[$field]) && $data[$field] ? (string) $data[$field] : $default;
     }
 
     public function getNumber($data, $field, $default = 0)
     {
-        return (isset($data->$field) && $data->$field) ? (int)$data->$field : $default;
+        return (isset($data->$field) && $data->$field) ? (int) $data->$field : $default;
     }
 
     public function getString($data, $field, $default = '')
@@ -140,6 +146,10 @@ class BaseTransformer
     public function getFrequency($frequency = RecurringInvoice::FREQUENCY_MONTHLY): int
     {
 
+        // if(is_string($frequency)){
+        //     $frequency = strtolower(trim($frequency));
+        // }
+
         switch ($frequency) {
             case RecurringInvoice::FREQUENCY_DAILY:
             case 'daily':
@@ -155,6 +165,7 @@ class BaseTransformer
                 return RecurringInvoice::FREQUENCY_FOUR_WEEKS;
             case RecurringInvoice::FREQUENCY_MONTHLY:
             case 'monthly':
+            case 'month':
                 return RecurringInvoice::FREQUENCY_MONTHLY;
             case RecurringInvoice::FREQUENCY_TWO_MONTHS:
             case 'bimonthly':
@@ -170,6 +181,9 @@ class BaseTransformer
                 return RecurringInvoice::FREQUENCY_SIX_MONTHS;
             case RecurringInvoice::FREQUENCY_ANNUALLY:
             case 'yearly':
+            case 'annually':
+            case 'annual':
+            case 'year':
                 return RecurringInvoice::FREQUENCY_ANNUALLY;
             case RecurringInvoice::FREQUENCY_TWO_YEARS:
             case '2years':
@@ -190,15 +204,17 @@ class BaseTransformer
             return -1;
         }
 
-        return (int)$remaining_cycles;
+        return (int) $remaining_cycles;
     }
 
     public function getAutoBillFlag(string $option): string
     {
         switch ($option) {
+            case 'no':
             case 'off':
             case 'false':
                 return 'off';
+            case 'yes':
             case 'always':
             case 'true':
                 return 'always';
@@ -255,6 +271,12 @@ class BaseTransformer
             ];
 
             throw new \App\Import\ImportException("Error, you are attempting to import more clients than your plan allows ({$hosted_client_count})");
+        }
+
+        // 2026-03-05: If we don't have a client name or email, we can't create a client.
+        if (empty(trim($client_name ?? '')) && empty(trim($client_email ?? ''))) {
+            nlog("A Client Name or Email is required, none provided! {$client_name}, {$client_email}");
+            throw new \App\Import\ImportException("A Client Name or Email is required, none provided!");
         }
 
         $client_repository = app()->make(ClientRepository::class);
@@ -644,6 +666,21 @@ class BaseTransformer
             ->where('is_deleted', false)
             ->whereRaw("LOWER(REPLACE(`number`, ' ' ,''))  = ?", [
                 strtolower(str_replace(' ', '', $quote_number)),
+            ])
+            ->exists();
+    }
+
+    /**
+     * @param $purchase_order_number
+     *
+     * @return bool
+     */
+    public function hasPurchaseOrder($purchase_order_number)
+    {
+        return PurchaseOrder::query()->where('company_id', $this->company->id)
+            ->where('is_deleted', false)
+            ->whereRaw("LOWER(REPLACE(`number`, ' ' ,''))  = ?", [
+                strtolower(str_replace(' ', '', $purchase_order_number)),
             ])
             ->exists();
     }

@@ -4,6 +4,7 @@ namespace App\Import\Providers;
 
 use App\Models\Company;
 use App\Models\Invoice;
+use App\Import\Providers\BaseImport;
 use Illuminate\Support\Facades\Cache;
 use App\Services\Quickbooks\QuickbooksService;
 use App\Services\Quickbooks\Transformers\ClientTransformer;
@@ -19,7 +20,7 @@ class QBBackup extends BaseImport implements ImportInterface
     {
         parent::__construct($request, $company);
 
-        $base64_zip = Cache::get($request['hash'].'-backup');
+        $base64_zip = Cache::get($request['hash'] . '-backup');
         $zip_content = base64_decode($base64_zip);
 
         $temp_file = tempnam(sys_get_temp_dir(), 'zip_');
@@ -46,14 +47,12 @@ class QBBackup extends BaseImport implements ImportInterface
         }
     }
 
-    public function transform(array $data)
-    {
-    }
+    public function transform(array $data) {}
 
     public function client()
     {
         if (isset($this->qb_data['clients'])) {
-            $this->qb->client->importToNinja($this->qb_data['clients']);
+            $this->qb->client->syncToNinja($this->qb_data['clients']);
         }
     }
 
@@ -117,13 +116,7 @@ class QBBackup extends BaseImport implements ImportInterface
 
     }
 
-    public function vendor()
-    {
+    public function vendor() {}
 
-    }
-
-    public function expense()
-    {
-
-    }
+    public function expense() {}
 }
