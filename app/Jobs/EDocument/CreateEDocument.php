@@ -25,7 +25,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use App\Services\EDocument\Standards\Peppol;
 use horstoeko\zugferd\ZugferdDocumentBuilder;
-use App\Services\EDocument\Standards\FatturaPA;
+use App\Services\EDocument\Standards\FatturaPANew;
 use App\Services\EDocument\Standards\RoEInvoice;
 use App\Services\EDocument\Standards\OrderXDocument;
 use App\Services\EDocument\Standards\FacturaEInvoice;
@@ -41,7 +41,9 @@ class CreateEDocument implements ShouldQueue
 
     public $deleteWhenMissingModels = true;
 
-    public function __construct(private object $document, private bool $returnObject = false) {}
+    public function __construct(private object $document, private bool $returnObject = false)
+    {
+    }
 
     /**
      * Execute the job.
@@ -74,7 +76,7 @@ class CreateEDocument implements ShouldQueue
                 case "FACT1":
                     return (new RoEInvoice($this->document))->generateXml();
                 case "FatturaPA":
-                    return (new FatturaPA($this->document))->run();
+                    return (new FatturaPANew($this->document))->run()->toXml();
                 case "EN16931":
                 case "XInvoice_3_0":
                 case "XInvoice_2_3":
@@ -137,6 +139,8 @@ class CreateEDocument implements ShouldQueue
                 case "XInvoice-Basic":
                     $zugferd = (new ZugferdEDokument($this->document))->run();
                     return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
+                case "FatturaPA":
+                    return (new FatturaPANew($this->document))->run()->toXml();
                 default:
                     $zugferd = (new ZugferdEDokument($this->document))->run();
                     return $this->returnObject ? $zugferd : $zugferd->getXml();
